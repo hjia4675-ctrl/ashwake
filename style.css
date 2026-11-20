@@ -82,12 +82,12 @@
   --key:clamp(56px,14vmin,75px);
   --action-width:calc(3 * var(--key) + 43px);
   --interact-width:min(160px,29%);
-  --stick-size:clamp(82px,21vmin,116px);
+  --stick-size:clamp(94px,24vmin,128px);
   --stick-rest:max(50px,calc(var(--stick-size) / 2 + 4px));
   min-height:0;height:var(--view-height);cursor:default;touch-action:manipulation;overscroll-behavior:none;-webkit-touch-callout:none
 }
 .touch-ui #field{touch-action:none}
-.touch-ui.touch-large .game{--key:clamp(62px,15.5vmin,84px);--stick-size:clamp(90px,24vmin,126px)}
+.touch-ui.touch-large .game{--key:clamp(62px,15.5vmin,84px);--stick-size:clamp(102px,27vmin,138px)}
 .touch-ui .game-top{z-index:4;min-height:0;gap:6px;padding:var(--hud-top) var(--hud-right) 14px var(--hud-left)}
 .touch-ui .vitals{width:clamp(84px,24%,175px);flex:none;min-width:0}
 .touch-ui .vital-label{font-size:11px;margin-bottom:5px;gap:3px;letter-spacing:0}
