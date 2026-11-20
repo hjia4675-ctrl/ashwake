@@ -31,6 +31,12 @@ const WARDEN_RUSH=[
   {trigger:465,reach:470,speed:860,tell:.48,damage:26,recovery:1.14,cooldown:3.5},
   {trigger:510,reach:515,speed:1050,tell:.36,damage:31,recovery:.92,cooldown:3.05}
 ];
+const BELL_ATTACKS=["slam","fan","sigil","rush"];
+const BELL_RUSH=[
+  {trigger:322,reach:300,speed:740,tell:.56,damage:33,recovery:.92},
+  {trigger:396,reach:365,speed:900,tell:.43,damage:37,recovery:.78}
+];
+const BELL_SIGIL=[{reach:450,radius:94,recovery:.64},{reach:540,radius:100,recovery:.54}];
 const SENTINEL_SWEEP={reach:265,arc:.72,recovery:2.05};
 const ARCHER_FRAME=[1083,77,353,402];
 const arenas = ["arena", "arena-2", "arena-3", "arena-4", "arena-5", "arena-6", "arena-7"];
@@ -51,7 +57,7 @@ const beasts = {
   brute: {name:"紫脊石像", hp:144, speed:83, r:27, size:102, color:"#cfa1fa", frame:[49,572,430,389], tell:.78, damage:18},
   eye:   {name:"蚀日之眼", hp:90, speed:122, r:18, size:78, color:"#ffae5b", frame:[575,542,330,408], tell:.71, damage:15},
   warden:{name:"铸钟守卫", hp:3000, speed:94, r:39, size:151, color:"#d1abeb", frame:[955,513,560,461], tell:.83, damage:22, boss:true},
-  bell:  {name:"永夜钟主", hp:6000, speed:111, r:49, size:184, color:"#ffaf67", frame:[955,513,560,461], tell:.76, damage:26, boss:true},
+  bell:  {name:"永夜钟主", hp:7800, speed:126, r:49, size:184, color:"#ffaf67", frame:[955,513,560,461], tell:.68, damage:30, boss:true},
   sentinel:{name:"拦路钟影", hp:76, speed:0, r:22, size:82, color:"#ffc582", frame:ARCHER_FRAME, tell:.40, damage:20, anchored:true}
 };
 
@@ -656,6 +662,21 @@ function nextWardenAttack(e,distance=0){
   if(ready&&distance>=190&&distance<=tuning.trigger)return "rush";
   return planned==="rush"&&!ready?"fan":planned;
 }
+function slamRadius(e){
+  if(e.id==="bell")return e.phase===2?192:164;
+  return e.boss?(e.phase===2?178:145):101;
+}
+function bossAttackReach(e,pattern){
+  if(e.id==="warden")return pattern==="rush"?WARDEN_RUSH[e.phase-1].trigger:pattern==="fan"?215:158;
+  if(pattern==="rush")return BELL_RUSH[e.phase-1].trigger;
+  if(pattern==="slam")return slamRadius(e);
+  if(pattern==="fan")return 355;
+  return BELL_SIGIL[e.phase-1].reach;
+}
+function nextBellAttack(e,distance){
+  const planned=BELL_ATTACKS[e.cycle%BELL_ATTACKS.length];
+  return distance<bossAttackReach(e,planned)?planned:"sigil";
+}
 function predictRunner(p,room,seconds,maxLead){
   const speed=Math.hypot(p.moveVX,p.moveVY);
   if(speed<24)return p;
@@ -671,14 +692,17 @@ function predictRunner(p,room,seconds,maxLead){
   }
   return {x:p.x+p.moveVX*travelTime,y:p.y+p.moveVY*travelTime};
 }
-function beginTell(e,p,wardenAttack){
-  const d=beasts[e.id], windup=e.boss?(e.phase===2?.79:1):(routes[route].enemyWindup??1);
+function beginTell(e,p,bossAttack){
+  const d=beasts[e.id], windup=e.boss?(e.phase===2?(e.id==="bell"?.75:.79):1):(routes[route].enemyWindup??1);
   e.attackA=angle(e,p);e.tx=p.x;e.ty=p.y;
   if(!e.boss)e.pattern=e.id;
-  else if(e.id==="warden")e.pattern=wardenAttack??nextWardenAttack(e);
-  else e.pattern=["slam","fan","sigil","charge"][e.cycle%4];
-  e.cycle++;e.full=e.pattern==="rush"?WARDEN_RUSH[e.phase-1].tell:d.tell*windup;e.tell=e.full;
-  if(e.pattern==="rush")prepareWardenRush(e,p);
+  else if(e.id==="warden")e.pattern=bossAttack??nextWardenAttack(e);
+  else e.pattern=bossAttack??nextBellAttack(e,dist(e,p));
+  e.cycle++;
+  const rush=e.pattern==="rush"?(e.id==="warden"?WARDEN_RUSH:BELL_RUSH)[e.phase-1]:null;
+  e.full=rush?.tell??d.tell*windup;e.tell=e.full;
+  if(rush)prepareBossRush(e,p,rush);
+  if(e.pattern==="sigil")e.marks=prepareBellSigils(e,p);
   if(e.anchored){
     const target=predictRunner(p,e.homeRoom??e,e.full,112);
     e.attackA=angle(e,target);
@@ -686,7 +710,7 @@ function beginTell(e,p,wardenAttack){
   }
   if(e.boss||e.id==="eye")sfx("tell");
 }
-function traceWardenRush(e,heading,reach){
+function traceBossRush(e,heading,reach){
   const steps=Math.ceil(reach/(TILE/8)), ux=Math.cos(heading),uy=Math.sin(heading);
   let distance=0;
   for(let i=1;i<=steps;i++){
@@ -696,18 +720,18 @@ function traceWardenRush(e,heading,reach){
   }
   return {ux,uy,distance};
 }
-function prepareWardenRush(e,p){
-  const tuning=WARDEN_RUSH[e.phase-1], distance=dist(e,p);
+function prepareBossRush(e,p,tuning){
+  const distance=dist(e,p);
   const aimAt=predictRunner(p,e.homeRoom??e,e.full+Math.min(distance,tuning.reach)/tuning.speed,330);
   const direct=e.attackA;
   e.attackA=angle(e,aimAt);
-  let path=traceWardenRush(e,e.attackA,tuning.reach);
+  let path=traceBossRush(e,e.attackA,tuning.reach);
   if(e.attackA!==direct&&path.distance<Math.min(145,distance*.63)){
-    const alternate=traceWardenRush(e,direct,tuning.reach);
+    const alternate=traceBossRush(e,direct,tuning.reach);
     if(alternate.distance>path.distance){e.attackA=direct;path=alternate}
   }
   e.rush={tuning,...path,traveled:0,hit:false};
-  e.rushReadyAt=scene+tuning.cooldown;
+  if(tuning.cooldown)e.rushReadyAt=scene+tuning.cooldown;
   if(Math.abs(path.ux)>.15)e.face=path.ux>0?-1:1;
 }
 function queueBossReinforcements(e){
@@ -742,7 +766,7 @@ function queueBossReinforcements(e){
   const flank=range(node.x,node.y,(anchors[0]?angle(node,anchors[0]):heading)+PI,132);
   queueEnemy(node,e.id==="bell"?"eye":"hound",flank.x,flank.y,.90);
 }
-function stepWardenRush(e,dt){
+function stepBossRush(e,dt){
   const rush=e.rush, {tuning,ux,uy}=rush, p=player;
   const travel=Math.min(rush.distance-rush.traveled,tuning.speed*dt);
   if(!rush.hit&&travel>0){
@@ -780,31 +804,40 @@ function strike(e){
       tone(202,109,.23,.25,"triangle");e.cd=SENTINEL_SWEEP.recovery;break;
     }
     case "brute":case "slam":{
-      const r=e.boss?(e.phase===2?178:145):101;if(sight&&distance<r)damage(e.damage,e);
+      const r=slamRadius(e);if(sight&&distance<r)damage(e.damage,e);
       ring(e.x,e.y,r*1.09,e.color,.52);sparks(e.x,e.y,e.color,e.boss?37:22,260);shake=e.boss?8:4;e.cd=e.boss?.93:1.63;break;
     }
     case "fan": {
       const count=e.phase===2?19:e.id==="warden"?10:13;
-      for(let i=0;i<count;i++)fire(e,e.attackA+TAU*i/count,e.phase===2?252:222,4.2);
-      if(e.phase===2)for(let i=-1;i<=1;i++)fire(e,e.attackA+.13*i,390,2.3);
+      const speed=e.id==="bell"?(e.phase===2?300:255):(e.phase===2?252:222);
+      for(let i=0;i<count;i++)fire(e,e.attackA+TAU*i/count,speed,4.2);
+      if(e.phase===2)for(let i=-1;i<=1;i++)fire(e,e.attackA+.13*i,e.id==="bell"?450:390,2.3);
       ring(e.x,e.y,93,e.color,.45);e.cd=e.phase===2?.68:.97;break;
     }
     case "sigil": {
-      const spots=sigils(e);
-      for(const s of spots){if(standOn(floor,s.x,s.y)&&dist(s,p)<s.r&&floorSight(floor,s,p))damage(e.damage,s);ring(s.x,s.y,s.r*1.12,e.color);sparks(s.x,s.y,e.color,16,210)}
-      e.cd=.69;break;
-    }
-    case "charge": {
-      if(sight&&distance<253&&facing<Math.atan2(48,Math.max(25,distance)))damage(e.damage,e);
-      walkBody(floor,e,Math.cos(e.attackA)*215,Math.sin(e.attackA)*215);ring(e.x,e.y,96,e.color);sparks(e.x,e.y,e.color,30,230);e.cd=.77;break;
+      for(const s of e.marks){if(dist(s,p)<s.r&&floorSight(floor,s,p))damage(e.damage,s);ring(s.x,s.y,s.r*1.12,e.color);sparks(s.x,s.y,e.color,16,210)}
+      e.cd=BELL_SIGIL[e.phase-1].recovery;break;
     }
     case "rush":
-      sfx("wardenRush");ring(e.x,e.y,e.r*1.48,"#ff9d71",.29);sparks(e.x,e.y,e.color,16,220,e.attackA+PI);break;
+      sfx(e.id==="bell"?"bell":"wardenRush");ring(e.x,e.y,e.r*1.48,"#ff9d71",.29);sparks(e.x,e.y,e.color,16,220,e.attackA+PI);break;
   }
 }
-function sigils(e){
-  const spots=[{x:e.tx,y:e.ty,r:e.phase===2?96:88}];
-  if(e.phase===2)for(let i=0;i<3;i++)spots.push({...range(e.tx,e.ty,e.attackA+TAU*i/3,139),r:75});
+function prepareBellSigils(e,p){
+  const room=e.homeRoom;
+  const inside=point=>floor.owners[tileAt(point.x,point.y)]===room?.number&&standOn(floor,point.x,point.y);
+  let target=p;
+  for(const lead of [1,.75,.5,.25]){
+    const predicted=predictRunner(p,room??e,e.full*lead,170*lead);
+    if(inside(predicted)&&floorSight(floor,p,predicted)){target=predicted;break}
+  }
+  const spots=[{x:target.x,y:target.y,r:BELL_SIGIL[e.phase-1].radius}];
+  if(e.phase===2){
+    const heading=dist(p,target)>8?angle(p,target):e.attackA;
+    for(const offset of [0,-PI/2,PI/2]){
+      const spot=range(target.x,target.y,heading+offset,136);
+      if(inside(spot)&&floorSight(floor,target,spot))spots.push({...spot,r:76});
+    }
+  }
   return spots;
 }
 function stepEnemy(e,dt){
@@ -830,7 +863,7 @@ function stepEnemy(e,dt){
     queueBossReinforcements(e);
   }
   if(e.tell>0){e.tell-=dt;if(e.tell<=0)strike(e);return}
-  if(e.rush){stepWardenRush(e,dt);return}
+  if(e.rush){stepBossRush(e,dt);return}
   if(e.recoveringRush){if(e.cd>0)return;e.recoveringRush=false}
   if(e.stun>0)return;
   const sight=floorSight(floor,e,p);
@@ -843,10 +876,10 @@ function stepEnemy(e,dt){
   }
   const ranged=e.id==="archer"||e.id==="eye";
   const desired=e.id==="archer"?264:e.id==="eye"?203:e.boss?105:e.id==="brute"?85:83;
-  const wardenAttack=e.id==="warden"?nextWardenAttack(e,distance):null;
-  const reach=wardenAttack?(wardenAttack==="rush"?WARDEN_RUSH[e.phase-1].trigger:wardenAttack==="fan"?215:158):e.boss?240:ranged?460:desired+15;
+  const bossAttack=e.boss?(e.id==="warden"?nextWardenAttack(e,distance):nextBellAttack(e,distance)):null;
+  const reach=bossAttack?bossAttackReach(e,bossAttack):ranged?460:desired+15;
   if(sight&&e.cd<=0&&distance<reach&&(!e.boss||!foes.some(other=>other.hp>0&&other.anchored&&other.homeRoom===e.homeRoom&&other.tell>0))){
-    beginTell(e,p,wardenAttack);return;
+    beginTell(e,p,bossAttack);return;
   }
   const moving=!sight||distance>desired?1:ranged&&distance<desired-65?-.71:0;
   const speed=d.speed*(e.elite?ELITE_SPEED:1)*(e.phase===2?1.23:1)*(e.slow>0?(e.boss?.88:.7):1);
@@ -1339,8 +1372,8 @@ function drawTell(e){
     oval(x,y,r,r,"#b62d3036");circle(x,y,r,"#fb7459a5",2);circle(x,y,Math.max(1,r*pulse),red,2.1);
   };
   switch(e.pattern){
-    case "hound":case "charge":{
-      const n=e.pattern==="charge"?245:122,width=e.pattern==="charge"?45:25;
+    case "hound":{
+      const n=122,width=25;
       ctx.save();ctx.translate(e.x,e.y);ctx.rotate(e.attackA);
       ctx.fillStyle="#fa47382b";ctx.fillRect(0,-width,n,width*2);ctx.fillStyle="#ef634864";ctx.fillRect(0,-width,pulse*n,width*2);ctx.strokeStyle="#f37d68b8";ctx.strokeRect(0,-width,n,width*2);ctx.restore();break;
     }
@@ -1360,14 +1393,13 @@ function drawTell(e){
       const a=range(e.x,e.y,e.attackA,Math.max(W,H));
       ctx.setLineDash([7,8]);line(e.x,e.y,a.x,a.y,"#8affe5a9",1+pulse);ctx.setLineDash([]);break;
     }
-    case "brute":disk(e.x,e.y,101);break;
-    case "slam":disk(e.x,e.y,e.phase===2?178:145);break;
+    case "brute":case "slam":disk(e.x,e.y,slamRadius(e));break;
     case "eye":disk(e.tx,e.ty,68);break;
     case "sentinel":
       drawSentinelSweep(e.x,e.y,e.attackA,SENTINEL_SWEEP.reach,"#8e355058","#ffa673db",2.5);
       drawSentinelSweep(e.x,e.y,e.attackA,Math.max(1,SENTINEL_SWEEP.reach*pulse),"#f96d533e","#ffc38e99",1.5);
       break;
-    case "sigil":for(const s of sigils(e))disk(s.x,s.y,s.r);break;
+    case "sigil":for(const s of e.marks)disk(s.x,s.y,s.r);break;
     case "fan":{
       const count=e.phase===2?19:e.id==="warden"?10:13;
       for(let i=0;i<count;i++){const a=e.attackA+i*TAU/count,s=range(e.x,e.y,a,e.r+18),t=range(e.x,e.y,a,e.r+38+pulse*31);line(s.x,s.y,t.x,t.y,"#ffad7fbe",2.2)}break;
@@ -1600,7 +1632,7 @@ function draw(){
     if(nearby)visible.push(e);
     if(e.tell<=0)continue;
     const warningReach=e.rush?e.rush.distance+e.r+player.r:e.anchored?SENTINEL_SWEEP.reach:175;
-    if(nearby||inView(e.x,e.y,warningReach))drawTell(e);
+    if(e.pattern==="sigil"||nearby||inView(e.x,e.y,warningReach))drawTell(e);
   }
   drawTouchAim();
   const entities=[...visible,player].sort((a,b)=>a.y-b.y);
@@ -1974,7 +2006,7 @@ function showGuide(){
   $("dismiss").onclick=closeModal;
 }
 function records(){
-  const lore={hound:"锁定前方后会直线扑袭。看到地面红线时向侧面闪避。",archer:"喜欢保持距离。青色虚线标示它的射击方向。",brute:"沉重的双拳会震击周围，攻击前有明显蓄力。",eye:"把爆裂刻印放在你刚才的位置。走出圆环即可躲开。",warden:"拉开距离时会预判你的跑位，亮起冲撞线后迅速突进，半血后更快。可急停、掉头或横闪，再趁收招反击。半血召唤裂骨猎犬和两只拦路钟影。",bell:"半血后加快出招、扩大符印范围，并召出蚀日之眼和两只拦路钟影。",sentinel:"两只钟影分守首领房外圈，轮流预警并快速扫击扇形区域。绕到侧面或用远程武器先击破它。"};
+  const lore={hound:"锁定前方后会直线扑袭。看到地面红线时向侧面闪避。",archer:"喜欢保持距离。青色虚线标示它的射击方向。",brute:"沉重的双拳会震击周围，攻击前有明显蓄力。",eye:"把爆裂刻印放在你刚才的位置。走出圆环即可躲开。",warden:"拉开距离时会预判你的跑位，亮起冲撞线后迅速突进，半血后更快。可急停、掉头或横闪，再趁收招反击。半血召唤裂骨猎犬和两只拦路钟影。",bell:"远处的符印会预判你的跑位，看到圆环就变向。突进时向红线侧面闪避。半血后符印扩散，弹幕加速，并召出蚀日之眼和两只拦路钟影。",sentinel:"两只钟影分守首领房外圈，轮流预警并快速扫击扇形区域。绕到侧面或用远程武器先击破它。"};
   const known=Object.entries(beasts).map(([id,b])=>[save.unlocked[id]?b.name:"未遭遇",save.unlocked[id]?lore[id]:"在远征中首次遭遇后解锁"]);
   showModal(heading("远征档案",`远征 ${save.runs} 次 · 通关 ${save.wins} 次 · 最深 ${save.best} / 7 层 · 累计击败 ${save.kills}`)+grid(known)+row(btn("dismiss","返回",true)));
   $("dismiss").onclick=closeModal;
