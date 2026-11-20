@@ -1486,7 +1486,7 @@ const turn = n => Math.atan2(Math.sin(n), Math.cos(n));
 const range = (x, y, a, n) => ({x:x + Math.cos(a)*n, y:y + Math.sin(a)*n});
 const smallMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 let touchUI=matchMedia("(pointer: coarse)").matches, touchRotated=false;
-const DASH_COOLDOWN=2.3;
+const DASH_COOLDOWN=2.4;
 const DASH_REDUCTION_CAP=80, DASH_MIN_COOLDOWN=DASH_COOLDOWN*(100-DASH_REDUCTION_CAP)/100;
 const CINDER={targets:3,ticks:4,interval:.45,damage:5};
 const DASH_EDGE={damage:50,time:1.4,cooldown:1.5};
