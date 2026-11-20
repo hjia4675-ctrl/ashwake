@@ -6,8 +6,19 @@
   <meta name="theme-color" content="#0e0c10">
   <meta name="description" content="在永夜的钟楼，以刃与余烬穿越七重试炼。">
   <title>余烬回响 · ASHWAKE</title>
-  <link rel="preload" as="image" href="sprites.png" fetchpriority="high">
-  <link rel="stylesheet" href="style.css?v=landscape">
+  <script>
+    setTimeout(function () {
+      var start = document.getElementById("start");
+      if (!start || !start.disabled) return;
+      start.disabled = false;
+      start.setAttribute("aria-busy", "false");
+      document.getElementById("startLabel").textContent = "重新加载";
+      document.getElementById("startStatus").hidden = false;
+      start.onclick = function () { location.reload(); };
+    }, 8000);
+  </script>
+  <link rel="stylesheet" href="style.css?v=quick-start">
+  <link rel="preload" as="image" href="sprites.webp" type="image/webp" fetchpriority="high">
 </head>
 <body>
   <main id="app">
@@ -23,8 +34,8 @@
           <h1>余烬<span>回响</span></h1>
           <div class="wordmark">A S H W A K E</div>
           <p>当最后一口钟在永夜里沉寂，<br>你是唯一还能将它敲响的人。</p>
-          <div class="primary-actions"><button id="start" class="primary" disabled aria-busy="true"><span aria-hidden="true">◇</span> <span id="startLabel">正在加载画面…</span> <b aria-hidden="true">↗</b></button><button id="records" class="outline">远征档案</button></div>
-          <p id="startStatus" role="status" hidden>角色和怪物的画面加载失败，请重试。</p>
+          <div class="primary-actions"><button id="start" class="primary" disabled aria-busy="true"><span aria-hidden="true">◇</span> <span id="startLabel">正在启动…</span> <b aria-hidden="true">↗</b></button><button id="records" class="outline">远征档案</button></div>
+          <p id="startStatus" role="status" hidden>游戏启动超时，点上方按钮再试一次。</p>
         </div>
         <div class="hero-caption"><i></i><div>长夜蚀日<small>THE BELL OF NIGHT</small></div></div>
       </div>
@@ -62,9 +73,9 @@
     <div id="curtain" class="curtain" hidden><section id="panel" class="panel" role="dialog" aria-modal="true" aria-labelledby="panelTitle"></section></div>
   </main>
   <script src="maze.js" defer></script>
-  <script src="weapons.js" defer></script>
+  <script src="weapons.js?v=quick-start" defer></script>
   <script src="merchant.js" defer></script>
   <script src="combat-audio.js" defer></script>
-  <script src="game.js?v=art-ready" defer></script>
+  <script src="game.js?v=quick-start" defer></script>
 </body>
 </html>

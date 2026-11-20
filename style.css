@@ -159,3 +159,4 @@
 .touch-ui .inventory-list{max-height:min(calc(var(--view-height) * .57),520px)}
 .touch-options{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .touch-ui button:focus:not(:focus-visible){outline:none}
+.hero{background-image:image-set(url('cover.webp') type('image/webp'),url('cover.jpg') type('image/jpeg'))}

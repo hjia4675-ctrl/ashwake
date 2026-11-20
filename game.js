@@ -33,41 +33,14 @@ const WARDEN_RUSH=[
 ];
 const arenas = ["arena", "arena-2", "arena-3", "arena-4", "arena-5", "arena-6", "arena-7"];
 const art = {};
-let spriteAtlasState="loading";
 function requestArt(name,priority="auto",retry=false){
   if(art[name]&&!retry)return art[name];
-  const source=name==="sprites"?"sprites.png":name+".jpg";
+  const source=name==="sprites"?"sprites.webp":name+".jpg";
   const url = source;
   const img=new Image();img.fetchPriority=priority;
   art[name]=img;
   img.src=retry&&!url.startsWith("data:")?url+"?retry="+Date.now():url;
   return img;
-}
-function syncStartArtwork(){
-  $("start").disabled=spriteAtlasState==="loading";
-  $("start").setAttribute("aria-busy",String(spriteAtlasState==="loading"));
-  $("startLabel").textContent=spriteAtlasState==="ready"?"开始远征":spriteAtlasState==="error"?"重试加载":"正在加载画面…";
-  $("startStatus").hidden=spriteAtlasState!=="error";
-}
-function loadSpriteAtlas(retry=false){
-  spriteAtlasState="loading";syncStartArtwork();
-  const img=requestArt("sprites","high",retry);
-  const finish=()=>{
-    if(art.sprites!==img)return;
-    const ready=img.complete&&img.naturalWidth>0;
-    spriteAtlasState=ready?"ready":"error";syncStartArtwork();
-    if(ready)requestArt(arenas[0],"low");
-  };
-  if(typeof img.decode==="function")img.decode().then(finish,finish);
-  else if(img.complete)finish();
-  else{
-    img.addEventListener("load",finish,{once:true});
-    img.addEventListener("error",finish,{once:true});
-  }
-}
-function startFromMenu(){
-  if(spriteAtlasState==="ready")begin();
-  else if(spriteAtlasState==="error")loadSpriteAtlas(true);
 }
 
 const beasts = {
@@ -306,7 +279,6 @@ function entrySupply(path){
 function enter(name){
   route=name;
   requestArt(arenas[stage]);
-  if(arenas[stage+1])requestArt(arenas[stage+1],"low");
   if(stage>0){
     const supply=entrySupply(name);
     player.hp=Math.min(player.maxHp,player.hp+supply.hp);
@@ -379,6 +351,7 @@ function discover(){
   }
 }
 function begin(){
+  if(art.sprites?.complete&&!art.sprites.naturalWidth)requestArt("sprites","high",true);
   wakeAudio(); $("home").hidden=true;$("game").hidden=false;
   resize();
   stage=0;kills=0;cleared=0;elapsed=0;acquired=[];previousRelicOffer=[];lastAction="";player=makePlayer();enter("standard");
@@ -902,6 +875,15 @@ function tick(dt){
 const spiritColors=["#db724c","#63adf5","#a9d578","#ffa458","#bfd9ff","#bc82fd","#f8695e"];
 const motes=Array.from({length:48},()=>({x:Math.random(),y:Math.random(),speed:between(7,30),r:between(.6,2),a:between(.14,.52),phase:between(0,TAU)}));
 const heroFrame=[57,70,423,389];
+const spriteSilhouettes=new Map([
+  [heroFrame,[[0,-75],[12,-65],[14,-52],[25,-44],[30,-1],[13,7],[5,-17],[-3,6],[-19,6],[-17,-14],[-29,2],[-25,-42],[-12,-53],[-12,-66]]],
+  [beasts.hound.frame,[[-41,-8],[-35,-28],[-44,-45],[-30,-42],[-17,-32],[6,-36],[17,-48],[23,-58],[32,-44],[44,-34],[43,-25],[29,-19],[32,4],[21,5],[15,-12],[-12,-10],[-19,5],[-29,5],[-24,-13]]],
+  [beasts.archer.frame,[[0,-73],[12,-66],[14,-52],[25,-44],[30,-54],[24,-70],[28,-76],[38,-56],[40,-32],[31,-16],[27,3],[1,7],[-8,-9],[-16,3],[-26,3],[-20,-46],[-11,-56],[-12,-66]]],
+  [beasts.brute.frame,[[0,-72],[16,-63],[20,-53],[35,-49],[43,-30],[39,-11],[24,-9],[25,5],[8,5],[1,-10],[-9,5],[-26,5],[-24,-10],[-39,-10],[-45,-31],[-36,-49],[-20,-53],[-15,-65]]],
+  [beasts.eye.frame,[[-37,-33],[-27,-45],[-33,-62],[-10,-52],[0,-58],[9,-52],[33,-62],[27,-45],[37,-33],[26,-19],[20,-12],[0,-6],[-20,-12],[-26,-19]]],
+  [beasts.warden.frame,[[0,-79],[13,-69],[23,-75],[24,-55],[39,-50],[46,-32],[42,-12],[30,-13],[32,5],[13,5],[6,-14],[-5,-14],[-13,5],[-31,5],[-30,-13],[-42,-12],[-46,-32],[-39,-50],[-24,-55],[-23,-75],[-13,-69]]],
+  [beasts.bell.frame,[[0,-85],[10,-69],[26,-80],[24,-58],[42,-51],[38,-38],[49,-20],[34,-18],[41,6],[12,5],[1,-7],[-10,6],[-42,5],[-33,-19],[-48,-21],[-38,-38],[-43,-51],[-24,-58],[-26,-80],[-10,-69]]]
+]);
 const scenery=document.createElement("canvas");
 const roomMural=document.createElement("canvas");
 const stoneColors=["#30272c","#28313e","#29382f","#3a2a2a","#35404c","#352b43","#392730"];
@@ -909,11 +891,35 @@ function oval(x,y,rx,ry,color){ctx.fillStyle=color;ctx.beginPath();ctx.ellipse(x
 function circle(x,y,r,color,width=1){ctx.beginPath();ctx.arc(x,y,r,0,TAU);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke()}
 function glow(x,y,r,color){const g=ctx.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,color);g.addColorStop(1,"transparent");ctx.fillStyle=g;ctx.fillRect(x-r,y-r,r*2,r*2)}
 function line(x,y,tx,ty,color,width){ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(tx,ty);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke()}
+function spriteImage(){
+  const img=art.sprites;
+  return img?.complete&&img.naturalWidth?img:null;
+}
+function drawSpriteSilhouette(frame,size,color,armed=false){
+  const outline=spriteSilhouettes.get(frame);
+  ctx.save();ctx.scale(size/100,size/100);ctx.lineJoin="round";
+  ctx.beginPath();ctx.moveTo(...outline[0]);
+  for(let i=1;i<outline.length;i++)ctx.lineTo(...outline[i]);
+  ctx.closePath();
+  ctx.fillStyle="#1c1522";ctx.fill();
+  ctx.lineWidth=3;ctx.strokeStyle=color;ctx.stroke();
+  if(frame===beasts.eye.frame){
+    oval(0,-31,19,10,color);oval(0,-31,5,9,"#211325");
+  }else if(frame===beasts.hound.frame){
+    line(21,-35,31,-33,color,4);
+  }else{
+    line(-7,-56,-1,-54,color,3);line(1,-54,7,-56,color,3);
+    if(frame===heroFrame&&!armed){
+      line(-17,-22,-43,-48,"#ffd8ac",5);line(-23,-17,-12,-28,color,4);
+    }
+  }
+  ctx.restore();
+}
 function sprite(frame,x,y,size,face,fallback,tilt=0){
-  const img=art.sprites,[sx,sy,sw,sh]=frame,w=size*sw/sh;
+  const img=spriteImage(),[sx,sy,sw,sh]=frame,w=size*sw/sh;
   ctx.save();ctx.translate(x,y);ctx.rotate(tilt);ctx.scale(face,1);
-  if(img.complete&&img.naturalWidth)ctx.drawImage(img,sx,sy,sw,sh,-w/2,-size*.87,w,size);
-  else{ctx.fillStyle=fallback;ctx.beginPath();ctx.moveTo(0,-size*.68);ctx.lineTo(size*.28,-size*.21);ctx.lineTo(0,size*.1);ctx.lineTo(-size*.28,-size*.21);ctx.fill()}
+  if(img)ctx.drawImage(img,sx,sy,sw,sh,-w/2,-size*.87,w,size);
+  else drawSpriteSilhouette(frame,size,fallback);
   ctx.restore();
 }
 function paintPaving(pen,img){
@@ -1813,7 +1819,7 @@ window.addEventListener("blur",()=>{if(state==="fight")pause();else resetInput()
 document.addEventListener("visibilitychange",()=>{if(document.hidden&&state==="fight")pause()});
 window.addEventListener("resize",resize);
 window.addEventListener("orientationchange",resetInput);
-$("start").onclick=startFromMenu;$("guide").onclick=showGuide;$("records").onclick=records;$("sound").onclick=toggleSound;$("pause").onclick=pause;
+$("guide").onclick=showGuide;$("records").onclick=records;$("sound").onclick=toggleSound;$("pause").onclick=pause;
 $("mapButton").onclick=()=>{if(state==="fight")showFloorMap()};
 $("relicButton").onclick=showRelicInventory;
 $("interact").onclick=interact;
@@ -1835,4 +1841,8 @@ function loop(ms){
   }
   requestAnimationFrame(loop);
 }
-syncTouchLayout();resize();syncSound();updateBest();loadSpriteAtlas();requestAnimationFrame(loop);
+syncTouchLayout();resize();syncSound();updateBest();
+requestArt("sprites","high");
+$("start").onclick=begin;$("start").disabled=false;$("start").setAttribute("aria-busy","false");
+$("startLabel").textContent="开始远征";$("startStatus").hidden=true;
+requestAnimationFrame(loop);
