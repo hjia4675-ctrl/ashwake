@@ -197,6 +197,101 @@ const controlPointers=new Map(), touchCasts=new Map();
 let touchAim=null, weaponAim=null;
 let selected=[], previousRelicOffer=[], modalChoices=[], previousFocus, lastAction="";
 const scrollLockKeys=["Space","ArrowLeft","ArrowRight","ArrowUp","ArrowDown"];
+const RUN_SAVE_KEY="ashwake-expedition-v1", RUN_SAVE_INTERVAL=5;
+let hasStoredRun=Boolean(readRunStorage()), lastRunSave=0;
+
+function readRunStorage(){try{return localStorage.getItem(RUN_SAVE_KEY)}catch{return null}}
+function clearRunStorage(){
+  hasStoredRun=false;
+  try{localStorage.removeItem(RUN_SAVE_KEY)}catch{}
+}
+function encodeExpedition(snapshot){
+  // Enemies, rooms and casts are shared by several systems. Keep their identity through a reload.
+  const records=[], seen=new Map(), relicIds=new Map(relics.map(relic=>[relic,relic.id]));
+  const encode=value=>{
+    if(typeof value==="number"&&!Number.isFinite(value))return [String(value)];
+    if(value==null||typeof value!=="object")return value;
+    if(seen.has(value))return [seen.get(value)];
+    const id=records.length;
+    seen.set(value,id);records.push(null);
+    if(relicIds.has(value))records[id]=["relic",relicIds.get(value)];
+    else if(Array.isArray(value))records[id]=["array",value.map(encode)];
+    else if(value instanceof Set)records[id]=["set",[...value].map(encode)];
+    else if(value instanceof Map)records[id]=["map",[...value].map(([key,item])=>[encode(key),encode(item)])];
+    else if(value instanceof Uint8Array||value instanceof Int8Array)records[id]=[value instanceof Uint8Array?"uint8":"int8",Array.from(value)];
+    else records[id]=["object",Object.entries(value).filter(([,item])=>item!==undefined).map(([key,item])=>[key,encode(item)])];
+    return [id];
+  };
+  const root=encode(snapshot);
+  return JSON.stringify({version:1,root,records});
+}
+function decodeExpedition(raw){
+  const {version,root,records}=JSON.parse(raw);
+  if(version!==1||!Array.isArray(records))throw Error("Unsupported expedition save");
+  const relicById=new Map(relics.map(relic=>[relic.id,relic]));
+  const objects=records.map(([kind,data])=>{
+    switch(kind){
+      case "relic":if(relicById.has(data))return relicById.get(data);break;
+      case "array":return [];
+      case "set":return new Set();
+      case "map":return new Map();
+      case "uint8":return Uint8Array.from(data);
+      case "int8":return Int8Array.from(data);
+      case "object":return {};
+    }
+    throw Error("Invalid expedition save entry");
+  });
+  const decode=value=>{
+    if(!Array.isArray(value))return value;
+    const [ref]=value;
+    if(typeof ref==="string")return Number(ref);
+    if(!Object.hasOwn(objects,ref))throw Error("Missing expedition reference");
+    return objects[ref];
+  };
+  records.forEach(([kind,data],id)=>{
+    const target=objects[id];
+    if(kind==="array")for(const value of data)target.push(decode(value));
+    if(kind==="set")for(const value of data)target.add(decode(value));
+    if(kind==="map")for(const [key,value] of data)target.set(decode(key),decode(value));
+    if(kind==="object")for(const [key,value] of data){
+      Object.defineProperty(target,key,{value:decode(value),enumerable:true,writable:true,configurable:true});
+    }
+  });
+  return decode(root);
+}
+function saveExpedition(){
+  if(!floor||!player||player.hp<=0||state==="home"||state==="end")return;
+  lastRunSave=elapsed;
+  // Rendering caches depend on the current device and can be regenerated.
+  const {entryArt,sceneryImage,sceneryScale,field,...map}=floor;
+  try{
+    localStorage.setItem(RUN_SAVE_KEY,encodeExpedition({
+      stage,route,kills,cleared,elapsed,scene,player,floor:map,chamber,descent,pulse,nextPulse,pulseIndex,acquired,previousRelicOffer,
+      foes,shots,spawns,orbs,weaponBolts,weaponFields,hitStop
+    }));
+    hasStoredRun=true;
+  }catch{}
+}
+function restoreExpedition(){
+  const raw=readRunStorage();
+  if(!raw)return false;
+  let run;
+  try{
+    run=decodeExpedition(raw);
+    if(!rooms[run.stage]||!Object.hasOwn(routes,run.route)||run.player?.hp<=0||!Number.isFinite(run.player?.hp)||
+      run.floor?.cells?.length!==MAZE_COLS*MAZE_ROWS||!Array.isArray(run.floor.nodes)||!Array.isArray(run.foes))throw Error("Invalid expedition");
+  }catch{clearRunStorage();return false}
+  ({stage,route,kills,cleared,elapsed,scene,player,floor,chamber,descent,pulse,nextPulse,pulseIndex,acquired,previousRelicOffer,
+    foes,shots,spawns,orbs,weaponBolts,weaponFields,hitStop}=run);
+  lastRunSave=elapsed;preparedEntry=null;entryTextureDeadline=entryStartDeadline=0;
+  lastAction="";last=mobileTime=nextMobileDraw=hudTime=0;
+  resetInput();player.moveVX=player.moveVY=0;player.moving=false;
+  debris=[];fx=[];floats=[];weaponTraces=[];bannerTimer=shake=flash=0;$("banner").classList.remove("show");
+  floor.field=null;invalidateScenery();requestArt(arenas[stage],"high");warmCombatAudio(stage);
+  $("home").hidden=true;$("game").hidden=false;state="pause";
+  nearby=nearInteraction();resize(false);drawHud();draw();showPauseMenu();
+  return true;
+}
 
 function syncTouchViewport(){
   const app=$("app"), viewport=window.visualViewport;
@@ -390,7 +485,8 @@ function begin(prepared=null){
   wakeAudio(); $("home").hidden=true;$("game").hidden=false;
   slowMobile=false;cadenceFrames=lateFrames=mobileTime=nextMobileDraw=last=0;
   resize(false);
-  stage=0;kills=0;cleared=0;elapsed=0;acquired=[];previousRelicOffer=[];lastAction="";player=makePlayer();enter("standard",prepared);
+  stage=0;kills=0;cleared=0;elapsed=0;descent=null;acquired=[];previousRelicOffer=[];lastAction="";player=makePlayer();enter("standard",prepared);
+  saveExpedition();
   if(touchUI)draw();
   $("pause").focus({preventScroll:true});$("pause").blur();
 }
@@ -402,6 +498,7 @@ function home(){
     if(floor){floor.sceneryImage=null;invalidateScenery()}
     for(const arena of arenas)delete art[arena];
   }
+  $("startLabel").textContent=hasStoredRun?"继续远征":"开始远征";
   updateBest();$("start").focus();
 }
 function announce(title, note, time){
@@ -1316,6 +1413,11 @@ function prepareEntry(){
   }
 }
 function startExpedition(){
+  if(state==="home"&&hasStoredRun){
+    wakeAudio();
+    if(restoreExpedition())return;
+    hasStoredRun=false;
+  }
   if(!touchUI){begin();return}
   wakeAudio();
   if(preparedEntry?.sceneryScale===MOBILE_TERRAIN_SCALE){begin(preparedEntry);return}
@@ -1876,6 +1978,7 @@ function closeOptionalChoice(){
 function descend(path){
   if(state!=="routes")return;
   state="descend";nearby=null;descent={path,time:.36};resetInput();closeModal();drawHud();sfx("bell");
+  saveExpedition();
 }
 function closeCache(){
   if(state!=="cache")return;
@@ -1886,7 +1989,7 @@ function claimCache(heal){
   chamber.claimed=true;
   if(heal)player.hp=Math.min(player.maxHp,player.hp+10);
   else player.ash=Math.min(100,player.ash+7);
-  sfx("choose");closeCache();nearby=null;drawHud();
+  sfx("choose");closeCache();nearby=null;drawHud();saveExpedition();
 }
 function canTakeRelic(relic){return relicCopies(relic)<relic.maxCopies}
 function relicCopies(relic){return acquired.filter(r=>r===relic).length}
@@ -1942,9 +2045,10 @@ function showRelicChoice(bonus=false){
     $("tributeBack").onclick=closeOptionalChoice;
     return;
   }
-  selected=offerRelics(5);previousRelicOffer=selected;
+  selected=floor.rewardOffer??offerRelics(5);floor.rewardOffer=previousRelicOffer=selected;
   const note=`已通过第 ${cleared} 重试炼 · 选择一件。`;
   showModal(heading("余烬遗物",note+(touchUI?"":RELIC_STACK_NOTE))+cards(selected,"rewards"),selected.map((_,i)=>()=>chooseRelic(i)));
+  saveExpedition();
 }
 function chooseRelic(i){
   const bonus=state==="tribute";
@@ -1952,9 +2056,9 @@ function chooseRelic(i){
   const r=selected[i];
   if(!grantRelic(r))return;
   if(bonus)floor.tribute=null;
-  else floor.rewarded=true;
+  else{floor.rewarded=true;floor.rewardOffer=null}
   sfx("choose");state="fight";closeModal();nearby=nearInteraction();
-  announce(relicTitle(r),bonus?"已领取赤咒馈赠":"沿北侧门廊前往下一层",1.5);drawHud();
+  announce(relicTitle(r),bonus?"已领取赤咒馈赠":"沿北侧门廊前往下一层",1.5);drawHud();saveExpedition();
 }
 function grantRelic(relic){
   if(!canTakeRelic(relic))return false;
@@ -1968,6 +2072,7 @@ function grantRelic(relic){
 }
 function finish(win){
   state="end";resetInput();sfx(win?"bell":"hurt");save.runs++;save.kills+=kills;save.best=Math.max(save.best,cleared);if(win)save.wins++;
+  clearRunStorage();
   storeSave();updateBest();
   const secs=Math.floor(elapsed), time=`${Math.floor(secs/60)}:${String(secs%60).padStart(2,"0")}`;
   showModal(heading(win?"钟响，长夜消散":"余烬熄灭",win?"永夜钟主已倒下。拂晓自钟楼升起。":"钟声尚未响起。下一次远征将重新抽取敌群与遗物。")+
@@ -1977,7 +2082,7 @@ function finish(win){
 }
 function pause(){
   if(state!=="fight")return;
-  state="pause";resetInput();showPauseMenu();
+  state="pause";resetInput();showPauseMenu();saveExpedition();
 }
 function showPauseMenu(){
   const loadout=player.weapons.map((id,i)=>{
@@ -2011,7 +2116,12 @@ function confirmLeave(){
   showModal(heading("结束本次远征？","本局将结算至已通过的层数，遗物会随远征结束。")+row(btn("stay","继续战斗",true),btn("exitRun","结束并结算")));
   $("stay").onclick=resume;$("exitRun").onclick=()=>finish(false);
 }
-function resume(){if(state!=="pause")return;wakeAudio();resetInput();state="fight";closeModal()}
+function resume(){
+  if(state!=="pause")return;
+  wakeAudio();resetInput();
+  if(floor.rewardOffer&&!floor.rewarded){showRelicChoice();return}
+  state=descent?"descend":"fight";closeModal();
+}
 function showGuide(){
   if(touchUI){
     wakeAudio();showModal(heading("触屏操作","游戏以横屏显示。请横着拿手机，暂停菜单可交换摇杆位置或放大按键。")+
@@ -2208,7 +2318,13 @@ window.addEventListener("keydown",e=>{
   }
 });
 window.addEventListener("keyup",e=>keys.delete(e.code));
-window.addEventListener("blur",()=>{if(state==="fight")pause();else resetInput()});
+function parkExpedition(){
+  resetInput();
+  if(state==="fight"||state==="descend"){state="pause";showPauseMenu()}
+  saveExpedition();
+}
+window.addEventListener("blur",parkExpedition);
+window.addEventListener("pagehide",parkExpedition);
 function redrawSurfaces(){
   invalidateScenery();last=nextMobileDraw=mobileTime=0;
   if(player&&state!=="home"&&!document.hidden)resize();
@@ -2222,9 +2338,8 @@ scenery.addEventListener("contextlost",()=>{sceneryLost=true;invalidateScenery()
 scenery.addEventListener("contextrestored",()=>{sceneryLost=false;redrawSurfaces()});
 glowSheet.addEventListener("contextrestored",()=>glowStamps.clear());
 document.addEventListener("visibilitychange",()=>{
-  if(document.hidden){
-    if(state==="fight")pause();
-  }else if(touchUI)requestAnimationFrame(redrawSurfaces);
+  if(document.hidden)parkExpedition();
+  else if(touchUI)requestAnimationFrame(redrawSurfaces);
 });
 window.addEventListener("pageshow",e=>{if(e.persisted&&touchUI)requestAnimationFrame(redrawSurfaces)});
 window.addEventListener("resize",resize);
@@ -2254,7 +2369,7 @@ function trackMobileCadence(dt){
 }
 function loop(ms){
   requestAnimationFrame(loop);
-  if(touchUI&&(state==="home"||state==="end"&&entryStartDeadline)&&!document.hidden&&ctx)prepareEntry();
+  if(touchUI&&(state==="home"&&!hasStoredRun||state==="end"&&entryStartDeadline)&&!document.hidden&&ctx)prepareEntry();
   if(document.hidden||fieldLost||!ctx||(state!=="fight"&&state!=="descend")){last=mobileTime=0;return}
   const dt=last?clamp((ms-last)/1000,0,touchUI?MOBILE_STEP*4:.033):0;last=ms;
   if(touchUI)trackMobileCadence(dt);
@@ -2267,9 +2382,10 @@ function loop(ms){
       }
     }else advanceFight(dt);
     hudTime-=dt;if(hudTime<=0){hudTime=touchUI?.1:.078;drawHud()}
+    if(elapsed-lastRunSave>=RUN_SAVE_INTERVAL)saveExpedition();
   }else{
     descent.time-=dt;
-    if(descent.time<=0){const {path}=descent;descent=null;stage++;enter(path)}
+    if(descent.time<=0){const {path}=descent;descent=null;stage++;enter(path);saveExpedition()}
   }
   if(!touchUI||ms>=nextMobileDraw-.5){
     nextMobileDraw=Math.max(nextMobileDraw+MOBILE_DRAW_INTERVAL,ms+MOBILE_DRAW_INTERVAL/2);
@@ -2278,7 +2394,7 @@ function loop(ms){
 }
 syncTouchLayout();resize();syncSound();updateBest();
 requestArt("sprites","high");
-if(touchUI)requestArt(arenas[0],"high");
+if(touchUI&&!hasStoredRun)requestArt(arenas[0],"high");
 $("start").onclick=startExpedition;$("start").disabled=false;$("start").setAttribute("aria-busy","false");
-$("startLabel").textContent="开始远征";$("startStatus").hidden=true;
+$("startLabel").textContent=hasStoredRun?"继续远征":"开始远征";$("startStatus").hidden=true;
 requestAnimationFrame(loop);
