@@ -371,24 +371,21 @@ function paintWeapon(id,x,y,a,size){
   ctx.drawImage(model,-37,-54);ctx.restore();
 }
 function equippedHero(p,y,face,tilt){
-  const id=p.weapons[p.weaponSlot], w=weaponBook[id], size=77;
-  if(!id){sprite(heroFrame,p.x,y,size,face,"#ff9977",tilt);return}
-  const base=spriteImage(),[,,sw,sh]=heroFrame, width=size*sw/sh;
+  const id=p.weapons[p.weaponSlot], w=weaponBook[id];
   ctx.save();ctx.translate(p.x,y);ctx.rotate(tilt);ctx.scale(face,1);
-  if(base){
-    ctx.save();ctx.translate(-width/2,-size*.87);ctx.scale(width/sw,size/sh);
-    ctx.beginPath();ctx.rect(0,0,sw,sh);
-    ctx.moveTo(0,232);ctx.lineTo(86,211);ctx.lineTo(116,241);ctx.lineTo(77,296);ctx.lineTo(45,389);ctx.lineTo(0,389);ctx.closePath();
-    ctx.clip("evenodd");drawSpriteFrame(base,heroFrame,0,0,sw,sh);ctx.restore();
-  }else drawSpriteSilhouette(heroFrame,size,"#ff9977",true);
+  drawHeroModel(77);
   const directional=Math.atan2(Math.sin(p.a)*.55,Math.cos(p.a)*face);
   const moving=p.attack>0?1-p.attack/p.attackTotal:0;
   const sweep=moving?Math.sin(moving*PI)*((id==="glaive"||id==="sickle")?.95:.36):0;
   const pose=p.parry>0?Math.PI:directional-.20+sweep*(p.combo%2===0?1:-1);
-  const x=-18-(p.attack>0?8*Math.sin(moving*PI):0), handY=-22;
+  const x=-20-(p.attack>0?8*Math.sin(moving*PI):0), handY=-18;
   if(id==="daggers"||id==="gauntlets")paintWeapon(id,13,handY-5,pose-.54,.52);
-  paintWeapon(id,x,handY,pose,p.dash>0?.6:.71);
-  if(id!=="shield"&&id!=="gauntlets"){oval(x,handY,5,4,"#372530");oval(x-1,handY-1,3,2,w.color+"b2")}
+  if(id)paintWeapon(id,x,handY,pose,p.dash>0?.6:.71);
+  else{
+    ctx.save();ctx.translate(x,handY);ctx.rotate(pose);
+    line(-4,0,31,0,"#4a2a26",7);line(4,0,30,0,"#ffb079",3.5);line(3,-5,3,5,"#9b6542",2.5);ctx.restore();
+  }
+  if(w&&id!=="shield"&&id!=="gauntlets"){oval(x,handY,5,4,"#372530");oval(x-1,handY-1,3,2,w.color+"b2")}
   ctx.restore();
 }
 function drawWeaponCombat(){

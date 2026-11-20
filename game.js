@@ -43,7 +43,7 @@ const arenas = ["arena", "arena-2", "arena-3", "arena-4", "arena-5", "arena-6", 
 const art = {};
 function requestArt(name,priority="auto",retry=false){
   if(art[name]&&!retry)return art[name];
-  const source=name==="openingSprites"?"sprites-preview.webp":name==="sprites"?"sprites.webp":name===arenas[0]&&touchUI?"arena-entry.webp":name+".jpg";
+  const source=name==="hero"?"hero-yellow.webp":name==="openingSprites"?"sprites-preview.webp":name==="sprites"?"sprites.webp":name===arenas[0]&&touchUI?"arena-entry.webp":name+".jpg";
   const url = source;
   const img=new Image();img.fetchPriority=priority;
   art[name]=img;
@@ -1239,9 +1239,7 @@ function tick(dt){
 
 const spiritColors=["#db724c","#63adf5","#a9d578","#ffa458","#bfd9ff","#bc82fd","#f8695e"];
 const motes=Array.from({length:48},()=>({x:Math.random(),y:Math.random(),speed:between(7,30),r:between(.6,2),a:between(.14,.52),phase:between(0,TAU)}));
-const heroFrame=[57,70,423,389];
 const spriteSilhouettes=new Map([
-  [heroFrame,[[0,-75],[12,-65],[14,-52],[25,-44],[30,-1],[13,7],[5,-17],[-3,6],[-19,6],[-17,-14],[-29,2],[-25,-42],[-12,-53],[-12,-66]]],
   [beasts.hound.frame,[[-41,-8],[-35,-28],[-44,-45],[-30,-42],[-17,-32],[6,-36],[17,-48],[23,-58],[32,-44],[44,-34],[43,-25],[29,-19],[32,4],[21,5],[15,-12],[-12,-10],[-19,5],[-29,5],[-24,-13]]],
   [beasts.archer.frame,[[0,-73],[12,-66],[14,-52],[25,-44],[30,-54],[24,-70],[28,-76],[38,-56],[40,-32],[31,-16],[27,3],[1,7],[-8,-9],[-16,3],[-26,3],[-20,-46],[-11,-56],[-12,-66]]],
   [beasts.brute.frame,[[0,-72],[16,-63],[20,-53],[35,-49],[43,-30],[39,-11],[24,-9],[25,5],[8,5],[1,-10],[-9,5],[-26,5],[-24,-10],[-39,-10],[-45,-31],[-36,-49],[-20,-53],[-15,-65]]],
@@ -1312,7 +1310,21 @@ function drawSpriteFrame(img,[x,y,w,h],dx,dy,dw,dh){
   const scale=img.naturalWidth/1536;
   ctx.drawImage(img,x*scale,y*scale,w*scale,h*scale,dx,dy,dw,dh);
 }
-function drawSpriteSilhouette(frame,size,color,armed=false){
+function drawHeroModel(size){
+  const img=art.hero;
+  if(img?.complete&&img.naturalWidth){
+    const width=size*img.naturalWidth/img.naturalHeight;
+    ctx.drawImage(img,-width/2,-size*.91,width,size);
+    return;
+  }
+  ctx.save();ctx.scale(size/77,size/77);
+  oval(-10,-2,8,8,"#a57a3e");oval(10,-2,8,8,"#a57a3e");
+  oval(0,-30,22,30,"#f6c648");oval(-3,-24,16,17,"#f9e7bb");
+  oval(-3,-56,14,14,"#ffda54");
+  for(const x of [-10,1]){oval(x,-57,3.4,3.4,"#79a64e");oval(x,-57,1.8,1.8,"#152416")}
+  ctx.restore();
+}
+function drawSpriteSilhouette(frame,size,color){
   const outline=spriteSilhouettes.get(frame);
   ctx.save();ctx.scale(size/100,size/100);ctx.lineJoin="round";
   ctx.beginPath();ctx.moveTo(...outline[0]);
@@ -1326,9 +1338,6 @@ function drawSpriteSilhouette(frame,size,color,armed=false){
     line(21,-35,31,-33,color,4);
   }else{
     line(-7,-56,-1,-54,color,3);line(1,-54,7,-56,color,3);
-    if(frame===heroFrame&&!armed){
-      line(-17,-22,-43,-48,"#ffd8ac",5);line(-23,-17,-12,-28,color,4);
-    }
   }
   ctx.restore();
 }
@@ -2472,13 +2481,13 @@ function enableStart(){
 }
 if(ctx){
   syncTouchLayout();resize();syncSound();updateBest();
-  const preview=requestArt("openingSprites","high");
-  if(preview.complete)enableStart();
+  const openingImages=[requestArt("hero","high"),requestArt("openingSprites","high")];
+  const pending=openingImages.filter(img=>!img.complete);
+  if(!pending.length)enableStart();
   else{
     const timeout=setTimeout(enableStart,400);
-    const ready=()=>{clearTimeout(timeout);enableStart()};
-    preview.addEventListener("load",ready,{once:true});
-    preview.addEventListener("error",ready,{once:true});
+    const ready=()=>{if(pending.every(img=>img.complete)){clearTimeout(timeout);enableStart()}};
+    for(const img of pending){img.addEventListener("load",ready,{once:true});img.addEventListener("error",ready,{once:true})}
   }
   $("app").classList.add("boot-ready");
   requestAnimationFrame(loop);
