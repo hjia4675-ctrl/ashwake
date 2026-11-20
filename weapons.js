@@ -79,7 +79,7 @@ function weaponStrike(origin,a,move,damage,cast){
     weaponHit(cast,e,damage*inner*weaponFalloff(move,i),angle(origin,e));
     staggerWeapon(e,move.stagger);
     if(move.slow)e.slow=Math.max(e.slow??0,move.slow);
-    if(move.pull&&!e.boss){const pull=Math.min(move.pull,Math.max(0,dist(e,origin)-46));walkBody(floor,e,Math.cos(angle(e,origin))*pull,Math.sin(angle(e,origin))*pull)}
+    if(move.pull&&!e.boss&&!e.anchored){const pull=Math.min(move.pull,Math.max(0,dist(e,origin)-46));walkBody(floor,e,Math.cos(angle(e,origin))*pull,Math.sin(angle(e,origin))*pull)}
   }
   if(move.shape==="chain"&&targets.length){
     const jumpDamage=damage*(move.jumpScale??.5);

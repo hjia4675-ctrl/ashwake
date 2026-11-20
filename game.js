@@ -28,9 +28,11 @@ const EMBER_SPLASH={impact:20,damage:17,targets:3,reach:72};
 const EMBER_SLOW=2;
 const WARDEN_ATTACKS=["slam","fan","rush"];
 const WARDEN_RUSH=[
-  {trigger:320,reach:355,speed:650,damage:26,recovery:1.14},
-  {trigger:370,reach:415,speed:840,damage:31,recovery:.92}
+  {trigger:465,reach:470,speed:650,damage:26,recovery:1.14,cooldown:3.9},
+  {trigger:510,reach:515,speed:840,damage:31,recovery:.92,cooldown:3.45}
 ];
+const SENTINEL_SWEEP={reach:234,arc:.66,recovery:2.65};
+const ARCHER_FRAME=[1083,77,353,402];
 const arenas = ["arena", "arena-2", "arena-3", "arena-4", "arena-5", "arena-6", "arena-7"];
 const art = {};
 function requestArt(name,priority="auto",retry=false){
@@ -45,11 +47,12 @@ function requestArt(name,priority="auto",retry=false){
 
 const beasts = {
   hound: {name:"裂骨猎犬", hp:64, speed:144, r:18, size:80, color:"#f3a46e", frame:[548,92,419,367], tell:.38, damage:11},
-  archer:{name:"青灯引魂者", hp:74, speed:106, r:19, size:83, color:"#73e0d6", frame:[1083,77,353,402], tell:.63, damage:10},
+  archer:{name:"青灯引魂者", hp:74, speed:106, r:19, size:83, color:"#73e0d6", frame:ARCHER_FRAME, tell:.63, damage:10},
   brute: {name:"紫脊石像", hp:144, speed:83, r:27, size:102, color:"#cfa1fa", frame:[49,572,430,389], tell:.78, damage:18},
   eye:   {name:"蚀日之眼", hp:90, speed:122, r:18, size:78, color:"#ffae5b", frame:[575,542,330,408], tell:.71, damage:15},
   warden:{name:"铸钟守卫", hp:2250, speed:94, r:39, size:151, color:"#d1abeb", frame:[955,513,560,461], tell:.83, damage:22, boss:true},
-  bell:  {name:"永夜钟主", hp:6000, speed:111, r:49, size:184, color:"#ffaf67", frame:[955,513,560,461], tell:.76, damage:26, boss:true}
+  bell:  {name:"永夜钟主", hp:6000, speed:111, r:49, size:184, color:"#ffaf67", frame:[955,513,560,461], tell:.76, damage:26, boss:true},
+  sentinel:{name:"拦路钟影", hp:76, speed:0, r:22, size:82, color:"#ffc582", frame:ARCHER_FRAME, tell:.76, damage:16, anchored:true}
 };
 
 const schools = {
@@ -222,6 +225,7 @@ function followCamera(dt=0){
 }
 function makePlayer(){
   return {x:W/2,y:H*.71,r:15,hp:115,maxHp:115,ash:0,power:1,reach:1,haste:1,finisherPower:1,burn:0,linkEase:0,perfectPower:0,perfectAsh:0,
+    moveVX:0,moveVY:0,
     skillPower:1,orbReach:1,orbSpeed:1,orbSpread:1,orbRepeat:0,orbCenterPower:1,orbSidePower:1,orbPierces:0,orbPairs:1,orbSplash:0,orbSlow:0,
     dashRate:1,dashSpeed:1,dashStrike:0,dashEdge:0,dodgeHeal:0,dodgeHealCd:0,dodgeRefund:0,skillRate:1,ashRate:1,dust:0,dustUsed:0,
     ultPower:1,ultBossPower:1,ultReach:1,ultHeal:0,ultInv:0,ultRefund:0,leech:0,leechUsed:0,roomHeal:0,hurtInv:0,armor:1,revives:0,speed:255,a:-PI/2,
@@ -243,6 +247,7 @@ function spawn(id,x,y,elite=false,homeRoom=chamber){
   const def=beasts[id], hp=enemyHealth(id,stage,route,elite);
   const damage=def.damage*(def.boss?1:(routes[route].enemyDamage??1));
   const e={id,x,y,r:def.r,color:def.color,hp,maxHp:hp,damage,elite,homeRoom,boss:!!def.boss,cd:between(.34,1.05),tell:0,full:1,flash:0,stun:0,kx:0,ky:0,face:1,phase:1,cycle:0,seed:between(0,TAU),burn:0,burnTick:0};
+  if(def.anchored)e.anchored=true;
   foes.push(e);save.unlocked[id]=true;
   fx.push({type:"ring",x,y,r:def.r*1.6,life:.55,max:.55,color:def.color});
 }
@@ -304,6 +309,7 @@ function enter(name,prepared=null){
   foes=[];shots=[];orbs=[];spawns=[];debris=[];fx=[];floats=[];weaponBolts=[];weaponFields=[];weaponTraces=[];flash=0;shake=0;hitStop=0;
   const origin=floor.nodes[0];
   Object.assign(player,{x:origin.x,y:origin.y+116,a:-PI/2,attack:0,attackTotal:0,pending:null,buffer:null,edge:0,skill:0,dash:0,dashCd:0,dashMinCd:0,inv:.8,combo:0,comboT:0,parry:0,weaponInput:0,leechUsed:0,dustUsed:0});
+  player.moveVX=player.moveVY=0;
   followCamera();discover();drawHud();
   warmCombatAudio(stage);
 }
@@ -430,7 +436,10 @@ function hurt(e, raw, a, force=1, silent=false, charge=true, killCharge=true){
   e.hp-=h;e.flash=.12;
   if(e.boss&&(p.leech||p.dust))rewardBossDamage(e,previousHp);
   if(!silent){
-    if(!e.boss){e.kx=Math.cos(a)*145*force;e.ky=Math.sin(a)*145*force;if(e.tell<=0)e.stun=.085}
+    if(!e.boss){
+      if(!e.anchored){e.kx=Math.cos(a)*145*force;e.ky=Math.sin(a)*145*force}
+      if(e.tell<=0)e.stun=.085;
+    }
     label(e.x,e.y-e.r-12,h,e.boss?"#ffce9c":"#fff0cf");sparks(e.x,e.y-11,e.color,8,180,a);
     if(charge)ash(e.boss?BASE_ASH.bossHit:BASE_ASH.hit);
   }
@@ -644,28 +653,95 @@ function fire(e,a,speed=300,life=3){
   const pos=range(e.x,e.y,a,e.r+5);
   shots.push({...pos,a,speed,life,r:e.boss?7:6,color:e.color,damage:e.damage});
 }
-function nextWardenAttack(e){return WARDEN_ATTACKS[e.cycle%WARDEN_ATTACKS.length]}
-function beginTell(e,p){
+function nextWardenAttack(e,distance=0){
+  const planned=WARDEN_ATTACKS[e.cycle%WARDEN_ATTACKS.length], tuning=WARDEN_RUSH[e.phase-1];
+  const ready=(e.rushReadyAt??0)<=scene;
+  if(ready&&distance>=190&&distance<=tuning.trigger)return "rush";
+  return planned==="rush"&&!ready?"fan":planned;
+}
+function predictRunner(p,room,seconds,maxLead){
+  const speed=Math.hypot(p.moveVX,p.moveVY);
+  if(speed<24)return p;
+  const travelTime=Math.min(seconds,maxLead/speed);
+  const dx=p.x-room.x,dy=p.y-room.y,radius=Math.hypot(dx,dy);
+  if(radius>=125){
+    const tangent=(dx*p.moveVY-dy*p.moveVX)/radius;
+    if(Math.abs(tangent)>=speed*.82){
+      const radial=(dx*p.moveVX+dy*p.moveVY)/radius;
+      const heading=Math.atan2(dy,dx)+clamp(tangent*travelTime/radius,-1.45,1.45);
+      return range(room.x,room.y,heading,radius+radial*travelTime);
+    }
+  }
+  return {x:p.x+p.moveVX*travelTime,y:p.y+p.moveVY*travelTime};
+}
+function beginTell(e,p,wardenAttack){
   const d=beasts[e.id], windup=e.boss?(e.phase===2?.79:1):(routes[route].enemyWindup??1);
   e.attackA=angle(e,p);e.tx=p.x;e.ty=p.y;
   if(!e.boss)e.pattern=e.id;
-  else if(e.id==="warden")e.pattern=nextWardenAttack(e);
+  else if(e.id==="warden")e.pattern=wardenAttack??nextWardenAttack(e);
   else e.pattern=["slam","fan","sigil","charge"][e.cycle%4];
   e.cycle++;e.full=d.tell*windup;e.tell=e.full;
-  if(e.pattern==="rush")prepareWardenRush(e);
+  if(e.pattern==="rush")prepareWardenRush(e,p);
+  if(e.anchored){
+    const target=predictRunner(p,e.homeRoom??e,.52,112);
+    e.attackA=angle(e,target);
+    tone(357,281,.23,.17,"triangle");
+  }
   if(e.boss||e.id==="eye")sfx("tell");
 }
-function prepareWardenRush(e){
-  const tuning=WARDEN_RUSH[e.phase-1], steps=Math.ceil(tuning.reach/(TILE/8));
-  const ux=Math.cos(e.attackA),uy=Math.sin(e.attackA);
+function traceWardenRush(e,heading,reach){
+  const steps=Math.ceil(reach/(TILE/8)), ux=Math.cos(heading),uy=Math.sin(heading);
   let distance=0;
   for(let i=1;i<=steps;i++){
-    const travel=tuning.reach*i/steps, x=e.x+ux*travel,y=e.y+uy*travel;
+    const travel=reach*i/steps, x=e.x+ux*travel,y=e.y+uy*travel;
     if(floor.nodes[floor.owners[tileAt(x,y)]]!==e.homeRoom||!standOn(floor,x,y,e.r))break;
     distance=travel;
   }
-  e.rush={tuning,ux,uy,distance,traveled:0,hit:false};
-  if(Math.abs(ux)>.15)e.face=ux>0?-1:1;
+  return {ux,uy,distance};
+}
+function prepareWardenRush(e,p){
+  const tuning=WARDEN_RUSH[e.phase-1], distance=dist(e,p);
+  const aimAt=predictRunner(p,e.homeRoom??e,e.full+Math.min(distance,tuning.reach)/tuning.speed,330);
+  const direct=e.attackA;
+  e.attackA=angle(e,aimAt);
+  let path=traceWardenRush(e,e.attackA,tuning.reach);
+  if(e.attackA!==direct&&path.distance<Math.min(145,distance*.63)){
+    const alternate=traceWardenRush(e,direct,tuning.reach);
+    if(alternate.distance>path.distance){e.attackA=direct;path=alternate}
+  }
+  e.rush={tuning,...path,traveled:0,hit:false};
+  e.rushReadyAt=scene+tuning.cooldown;
+  if(Math.abs(path.ux)>.15)e.face=path.ux>0?-1:1;
+}
+function queueBossReinforcements(e){
+  const node=e.homeRoom, p=player;
+  if(!node)return;
+  const projected=predictRunner(p,node,.82,210), heading=angle(node,projected);
+  const dx=Math.cos(heading),dy=Math.sin(heading);
+  const edgeX=dx>0?node.right*TILE-node.x:node.x-node.left*TILE;
+  const edgeY=dy>0?node.bottom*TILE-node.y:node.y-node.top*TILE;
+  const extent=Math.min((edgeX-58)/Math.max(.01,Math.abs(dx)),(edgeY-58)/Math.max(.01,Math.abs(dy)));
+  const desired=range(node.x,node.y,heading,extent);
+  const field=mapDistances(floor,tileAt(p.x,p.y));
+  const r=beasts.sentinel.r;
+  let anchor=null, best=Infinity;
+  for(let y=node.top;y<node.bottom;y++)for(let x=node.left;x<node.right;x++){
+    const k=tileIndex(x,y), px=(x+.5)*TILE,py=(y+.5)*TILE;
+    if(floor.owners[k]!==node.number||field[k]<0||!standOn(floor,px,py,r))continue;
+    const playerSpace=Math.hypot(px-p.x,py-p.y),bossSpace=Math.hypot(px-e.x,py-e.y);
+    if(playerSpace<102||bossSpace<e.r+r+12)continue;
+    const score=Math.hypot(px-desired.x,py-desired.y);
+    if(score<best){best=score;anchor={x:px,y:py}}
+  }
+  const ally=e.id==="bell"?"eye":"hound";
+  if(anchor){
+    queueEnemy(node,"sentinel",anchor.x,anchor.y,.78);
+    const flank=range(node.x,node.y,angle(node,anchor)+PI,132);
+    queueEnemy(node,ally,flank.x,flank.y,.98);
+  }else{
+    queueEnemy(node,ally,node.x-135,node.y+45,.78);
+    queueEnemy(node,ally,node.x+135,node.y+45,.98);
+  }
 }
 function stepWardenRush(e,dt){
   const rush=e.rush, {tuning,ux,uy}=rush, p=player;
@@ -679,7 +755,7 @@ function stepWardenRush(e,dt){
   }
   e.x+=ux*travel;e.y+=uy*travel;rush.traveled+=travel;
   if(rush.traveled>=rush.distance){
-    e.rush=null;e.cd=tuning.recovery;shake=Math.max(shake,5);
+    e.rush=null;e.cd=tuning.recovery;e.recoveringRush=true;shake=Math.max(shake,5);
     ring(e.x,e.y,e.r*1.62,e.color,.34);sparks(e.x,e.y,e.color,17,205,e.attackA);
   }
 }
@@ -698,6 +774,11 @@ function strike(e){
     case "eye":{
       const target={x:e.tx,y:e.ty};if(dist(target,p)<68&&floorSight(floor,target,p))damage(e.damage,target);
       ring(e.tx,e.ty,82,e.color);sparks(e.tx,e.ty,e.color,24,225);e.cd=between(1.55,2.05);break;
+    }
+    case "sentinel":{
+      if(sight&&distance<=SENTINEL_SWEEP.reach&&facing<=SENTINEL_SWEEP.arc)damage(e.damage,e);
+      fx.push({type:"sentinel-sweep",x:e.x,y:e.y,a:e.attackA,life:.24,max:.24,r:SENTINEL_SWEEP.reach});
+      tone(202,109,.23,.25,"triangle");e.cd=SENTINEL_SWEEP.recovery;break;
     }
     case "brute":case "slam":{
       const r=e.boss?(e.phase===2?178:145):101;if(sight&&distance<r)damage(e.damage,e);
@@ -729,7 +810,7 @@ function sigils(e){
 }
 function stepEnemy(e,dt){
   const p=player,d=beasts[e.id], a=angle(e,p), distance=dist(e,p);
-  if(distance>690||(e.boss&&chamber!==e.homeRoom)){
+  if((distance>690&&!e.rush&&!e.anchored)||((e.boss||e.anchored)&&chamber!==e.homeRoom)){
     if(e.rush){e.cd=e.rush.tuning.recovery;e.rush=null}
     e.tell=0;return;
   }
@@ -745,20 +826,29 @@ function stepEnemy(e,dt){
   e.slow=Math.max(0,(e.slow||0)-dt);
   if(e.hp<=0)return;
   if(e.boss&&e.phase===1&&e.hp<e.maxHp*.5){
-    e.phase=2;e.tell=0;e.rush=null;e.cd=.5;ring(e.x,e.y,160,e.color,.8);sfx("bell");
-    announce(e.id==="bell"?"永夜震鸣":"钟铜崩裂","第二阶段",1.1);
-    const home=e.homeRoom;
-    for(let i=0;i<2;i++)queueEnemy(home,e.id==="bell"?"eye":"hound",home.x+(i?135:-135),home.y+45,.78+i*.2);
+    e.phase=2;e.tell=0;e.rush=null;e.recoveringRush=false;e.cd=.5;ring(e.x,e.y,160,e.color,.8);sfx("bell");
+    announce(e.id==="bell"?"永夜震鸣":"钟铜崩裂","第二阶段 · 留意外圈的扇形预警",1.3);
+    queueBossReinforcements(e);
   }
   if(e.tell>0){e.tell-=dt;if(e.tell<=0)strike(e);return}
   if(e.rush){stepWardenRush(e,dt);return}
+  if(e.recoveringRush){if(e.cd>0)return;e.recoveringRush=false}
   if(e.stun>0)return;
   const sight=floorSight(floor,e,p);
   if(Math.abs(Math.cos(a))>.15)e.face=Math.cos(a)>0?-1:1;
+  if(e.anchored){
+    if(sight&&e.cd<=0&&distance<SENTINEL_SWEEP.reach+22&&!foes.some(other=>other.hp>0&&other.boss&&other.homeRoom===e.homeRoom&&(other.tell>0||other.rush))){
+      beginTell(e,p);
+    }
+    return;
+  }
   const ranged=e.id==="archer"||e.id==="eye";
   const desired=e.id==="archer"?264:e.id==="eye"?203:e.boss?105:e.id==="brute"?85:83;
-  const reach=e.id==="warden"?(nextWardenAttack(e)==="rush"?WARDEN_RUSH[e.phase-1].trigger:158):e.boss?240:ranged?460:desired+15;
-  if(sight&&e.cd<=0&&distance<reach){beginTell(e,p);return}
+  const wardenAttack=e.id==="warden"?nextWardenAttack(e,distance):null;
+  const reach=wardenAttack?(wardenAttack==="rush"?WARDEN_RUSH[e.phase-1].trigger:wardenAttack==="fan"?215:158):e.boss?240:ranged?460:desired+15;
+  if(sight&&e.cd<=0&&distance<reach&&(!e.boss||!foes.some(other=>other.hp>0&&other.anchored&&other.homeRoom===e.homeRoom&&other.tell>0))){
+    beginTell(e,p,wardenAttack);return;
+  }
   const moving=!sight||distance>desired?1:ranged&&distance<desired-65?-.71:0;
   const speed=d.speed*(e.elite?ELITE_SPEED:1)*(e.phase===2?1.23:1)*(e.slow>0?(e.boss?.88:.7):1);
   let direction=a;
@@ -871,6 +961,7 @@ function tick(dt){
     skill(dx,dy,touch?.angle??(target?angle(p,target):null));
   }
   if(p.dash>0){
+    p.moveVX=p.moveVY=0;
     p.dash=Math.max(0,p.dash-dt);
     const stride=785*p.dashSpeed*dt;
     walkBody(floor,p,Math.cos(p.dashA)*stride,Math.sin(p.dashA)*stride);
@@ -883,7 +974,9 @@ function tick(dt){
     }
   }else{
     const stride=p.speed*dt*(p.pending?.78:1);
+    const x=p.x,y=p.y;
     walkBody(floor,p,dx*stride,dy*stride);p.moving=len>.08;
+    p.moveVX=dt>0?(p.x-x)/dt:0;p.moveVY=dt>0?(p.y-y)/dt:0;
     if(p.pending&&p.attack<=p.pending.at){const swing=p.pending;p.pending=null;if(swing.weapon)resolveWeapon(swing);else resolveSlash(swing)}
     const attackHeld=controlPointers.has(skillButtons[0]);
     if(len>.08&&p.attack===0&&p.parry===0&&!pointer.down&&!attackHeld)p.a=Math.atan2(dy,dx);
@@ -1236,6 +1329,10 @@ function drawMist(){
   }
   ctx.globalAlpha=1;
 }
+function drawSentinelSweep(x,y,a,r,fill,edge,width){
+  ctx.beginPath();ctx.moveTo(x,y);ctx.arc(x,y,r,a-SENTINEL_SWEEP.arc,a+SENTINEL_SWEEP.arc);ctx.closePath();
+  ctx.fillStyle=fill;ctx.fill();ctx.lineWidth=width;ctx.strokeStyle=edge;ctx.stroke();
+}
 function drawTell(e){
   if(e.tell<=0)return;
   const pulse=1-e.tell/e.full, red="#fb7459";
@@ -1267,12 +1364,29 @@ function drawTell(e){
     case "brute":disk(e.x,e.y,101);break;
     case "slam":disk(e.x,e.y,e.phase===2?178:145);break;
     case "eye":disk(e.tx,e.ty,68);break;
+    case "sentinel":
+      drawSentinelSweep(e.x,e.y,e.attackA,SENTINEL_SWEEP.reach,"#8e355058","#ffa673db",2.5);
+      drawSentinelSweep(e.x,e.y,e.attackA,Math.max(1,SENTINEL_SWEEP.reach*pulse),"#f96d533e","#ffc38e99",1.5);
+      break;
     case "sigil":for(const s of sigils(e))disk(s.x,s.y,s.r);break;
     case "fan":{
       const count=e.phase===2?19:e.id==="warden"?10:13;
       for(let i=0;i<count;i++){const a=e.attackA+i*TAU/count,s=range(e.x,e.y,a,e.r+18),t=range(e.x,e.y,a,e.r+38+pulse*31);line(s.x,s.y,t.x,t.y,"#ffad7fbe",2.2)}break;
     }
   }
+}
+function drawSentinel(e){
+  ctx.save();ctx.translate(e.x,e.y);
+  oval(0,2,27,12,"#211525");
+  oval(0,0,24,9,"#322234");circle(0,0,28,"#b58d615f",1.5);
+  ctx.translate(0,-27);
+  ctx.beginPath();ctx.moveTo(-22,12);ctx.quadraticCurveTo(-13,3,-13,-12);ctx.quadraticCurveTo(-11,-27,0,-27);
+  ctx.quadraticCurveTo(11,-27,13,-12);ctx.quadraticCurveTo(13,3,22,12);ctx.closePath();
+  ctx.fillStyle=e.flash>0?"#d8b28a":"#51394b";ctx.fill();ctx.strokeStyle="#d8a96f";ctx.lineWidth=2;ctx.stroke();
+  line(-18,12,18,12,"#f4cb99",2.5);oval(0,12,16,4,"#241724");oval(0,17,3,4,e.color);
+  ctx.beginPath();ctx.moveTo(0,-18);ctx.lineTo(6,-8);ctx.lineTo(0,2);ctx.lineTo(-6,-8);ctx.closePath();
+  ctx.fillStyle=e.tell>0?"#ffe4b4":e.color;ctx.fill();
+  ctx.restore();
 }
 function drawMob(e){
   const d=beasts[e.id], size=d.size*(e.elite?1.1:1), airborne=e.id==="eye"||e.id==="archer";
@@ -1295,7 +1409,8 @@ function drawMob(e){
     else if(e.boss&&e.phase===2)ctx.filter="saturate(1.7) brightness(1.15)";
   }
   const tilt=rushing?e.rush.ux*.14:e.tell>0?Math.sin(visualTime*25)*.024:0;
-  sprite(d.frame,e.x,e.y+bob,size,e.face,e.color,tilt);
+  if(e.anchored)drawSentinel(e);
+  else sprite(d.frame,e.x,e.y+bob,size,e.face,e.color,tilt);
   if(!touchUI)ctx.filter="none";
   else if(e.flash>0)circle(e.x,e.y-8,e.r+5,"#ffddb2b4",2);
   if(e.burn>0)oval(e.x+e.r*.55,e.y-size*.6,3,3,"#ffa254");
@@ -1357,6 +1472,7 @@ function drawEffects(){
     if(f.type==="slash")drawSlash(f);
     if(f.type==="ghost"){ctx.globalAlpha=life*.15;equippedHero({x:f.x,a:f.a,weapons:[f.id],weaponSlot:0,dash:1},f.y,Math.cos(f.a)>.07?-1:1,0)}
     if(f.type==="ring")circle(f.x,f.y,Math.max(1,f.r*(1-life)),f.color,1+life*3);
+    if(f.type==="sentinel-sweep")drawSentinelSweep(f.x,f.y,f.a,f.r,"#fe945759","#ffdba4",3.5);
     if(f.type==="nova"){
       const radius=Math.max(1,f.r*(1-life)*1.25);glow(f.x,f.y,Math.min(radius,640),"#ff9c4966");circle(f.x,f.y,radius,"#ffcd82",7);circle(f.x,f.y,Math.max(1,radius-15),"#fff0b6",2);
     }
@@ -1479,8 +1595,14 @@ function draw(){
     const f=clamp(1-(s.at-scene)/.7,0,1), c=beasts[s.id].color;
     glow(s.x,s.y,44+22*f,c+"47");circle(s.x,s.y,33*(1-f)+10,c,2);circle(s.x,s.y,16+25*f,c+"7f",1.5);
   }
-  const visible=foes.filter(e=>inView(e.x,e.y,175));
-  for(const e of visible)drawTell(e);
+  const visible=[];
+  for(const e of foes){
+    const nearby=inView(e.x,e.y,175);
+    if(nearby)visible.push(e);
+    if(e.tell<=0)continue;
+    const warningReach=e.rush?e.rush.distance+e.r+player.r:e.anchored?SENTINEL_SWEEP.reach:175;
+    if(nearby||inView(e.x,e.y,warningReach))drawTell(e);
+  }
   drawTouchAim();
   const entities=[...visible,player].sort((a,b)=>a.y-b.y);
   for(const entity of entities)entity===player?drawPlayer():drawMob(entity);
@@ -1852,7 +1974,7 @@ function showGuide(){
   $("dismiss").onclick=closeModal;
 }
 function records(){
-  const lore={hound:"锁定前方后会直线扑袭。看到地面红线时向侧面闪避。",archer:"喜欢保持距离。青色虚线标示它的射击方向。",brute:"沉重的双拳会震击周围，攻击前有明显蓄力。",eye:"把爆裂刻印放在你刚才的位置。走出圆环即可躲开。",warden:"轮流使用震地、环形弹幕和冲撞。冲撞前地面会亮起带箭头的红色路线，向侧面躲开后可趁它收招反击。半血召唤裂骨猎犬，冲撞也会加快。",bell:"半血后加快出招，召来蚀日之眼，并扩大符印范围。地面红圈标出了爆炸范围。"};
+  const lore={hound:"锁定前方后会直线扑袭。看到地面红线时向侧面闪避。",archer:"喜欢保持距离。青色虚线标示它的射击方向。",brute:"沉重的双拳会震击周围，攻击前有明显蓄力。",eye:"把爆裂刻印放在你刚才的位置。走出圆环即可躲开。",warden:"拉开距离时会预判你的跑位，亮起冲撞线后锁定方向。可急停、掉头或横闪，再趁收招反击。半血召唤裂骨猎犬和拦路钟影。",bell:"半血后加快出招、扩大符印范围，并召出蚀日之眼和拦路钟影。",sentinel:"在首领房外圈站定，预警后扫击扇形区域。绕到侧面或用远程武器先击破它。"};
   const known=Object.entries(beasts).map(([id,b])=>[save.unlocked[id]?b.name:"未遭遇",save.unlocked[id]?lore[id]:"在远征中首次遭遇后解锁"]);
   showModal(heading("远征档案",`远征 ${save.runs} 次 · 通关 ${save.wins} 次 · 最深 ${save.best} / 7 层 · 累计击败 ${save.kills}`)+grid(known)+row(btn("dismiss","返回",true)));
   $("dismiss").onclick=closeModal;

@@ -44,13 +44,15 @@ const combatSounds={
   deathWarden:[texture(1180,6120,.12,.44),chime(1470,1130,.30,.35,.016),thump(182,49,.43,.62,.033),
     chime(845,758,.45,.32,.14),texture(405,2750,.28,.34,.18),thump(148,42,.38,.49,.23),chime(496,390,.51,.24,.32)],
   deathBell:[chime(283,256,.89,.50),chime(910,839,.78,.32,.035),thump(163,47,.47,.56,.061),
-    texture(480,5940,.26,.41,.082),chime(648,502,.70,.39,.20),thump(140,36,.56,.41,.26),texture(510,3270,.63,.28,.32),chime(345,291,.82,.20,.46)]
+    texture(480,5940,.26,.41,.082),chime(648,502,.70,.39,.20),thump(140,36,.56,.41,.26),texture(510,3270,.63,.28,.32),chime(345,291,.82,.20,.46)],
+  deathSentinel:[chime(1280,1160,.22,.43),texture(1200,6420,.095,.46,.019),thump(282,91,.19,.38,.041),chime(735,716,.17,.22,.072)]
 };
 const deathCues={
   hound:{cue:"deathHound",delay:.024}, archer:{cue:"deathArcher",delay:.038},
   brute:{cue:"deathBrute",delay:.052}, eye:{cue:"deathEye",delay:.066},
   warden:{cue:"deathWarden",delay:.045,gain:1.17,clearDelay:.66},
-  bell:{cue:"deathBell",delay:.045,gain:1.30,clearDelay:.94}
+  bell:{cue:"deathBell",delay:.045,gain:1.30,clearDelay:.94},
+  sentinel:{cue:"deathSentinel",delay:.035}
 };
 const recentDeaths=new Map();
 const impactBuffers=new Map();
@@ -179,7 +181,10 @@ function warmCombatAudio(level){
       queueImpactBuffer("starter",step,true);
     }
     for(const cue of ["emberImpact","deathHound","deathArcher","deathBrute","deathEye"])queueImpactBuffer(cue);
-  }else if(level===3||level===6)queueImpactBuffer(level===3?"deathWarden":"deathBell");
+  }else if(level===3||level===6){
+    queueImpactBuffer(level===3?"deathWarden":"deathBell");
+    queueImpactBuffer("deathSentinel");
+  }
 }
 
 function prepareCombatAudio(){
