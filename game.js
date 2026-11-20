@@ -104,7 +104,7 @@ const relics=Object.entries(schools).flatMap(([school,{relics:items}])=>items.ma
 const RELIC_STACK_NOTE=`同名遗物通常最多叠 ${RELIC_STACK_LIMIT} 份。${relics.filter(r=>r.maxCopies===RESTRICTED_RELIC_STACK_LIMIT).map(r=>r.name).join("、")}最多各叠 ${RESTRICTED_RELIC_STACK_LIMIT} 份。五芒焰芯每局最多获得 1 份。`;
 
 const routes = {
-  standard:{icon:"◇", name:"钟鸣捷径", color:"#ffd2a1", trade:"入场补给，武器三选一", heal:15, entryAsh:20, enemyHealth:.90, enemyHealthIncludesBoss:true, weaponReward:true},
+  standard:{icon:"◇", name:"钟鸣捷径", color:"#ffd2a1", trade:"入场补给，武器三选一", heal:15, entryAsh:20, enemyHealth:.90, weaponReward:true},
   elite:{icon:"✹", name:"赤咒祭坛", color:"#ef8c65", trade:"强化敌群，额外遗物", heal:0, enemyDamage:1.20, enemyWindup:.88},
   shrine:{icon:"✚", name:"寂钟圣所", color:"#9be1be", trade:"补血，余烬减半", heal:40, enemyHealth:.85, ashGain:.50}
 };
@@ -231,17 +231,14 @@ function makePlayer(){
     ultPower:1,ultBossPower:1,ultReach:1,ultHeal:0,ultInv:0,ultRefund:0,leech:0,leechUsed:0,roomHeal:0,hurtInv:0,armor:1,revives:0,speed:255,a:-PI/2,
     attack:0,attackTotal:0,pending:null,buffer:null,edge:0,edgeCd:0,edgeSerial:0,dashCd:0,dashMinCd:0,skill:0,dash:0,dashA:0,inv:0,combo:0,comboT:0,step:0,moving:0,dashHits:new Set(),weapons:[],weaponSlot:0,weaponCd:0,weaponCdTotal:1,parry:0,parryAngle:0,weaponInput:0};
 }
-function routeEnemyHealthScale(level,path,boss=false){
-  const rules=routes[path];
-  return level>0&&(!boss||rules.enemyHealthIncludesBoss)?rules.enemyHealth??1:1;
-}
 function enemyHealth(id,level,path,elite=false){
   const def=beasts[id];
-  const scale=def.boss?routeEnemyHealthScale(level,path,true):mobHealthScale(level,path)*(elite?ELITE_HEALTH:1);
+  if(def.boss)return def.hp;
+  const scale=mobHealthScale(level,path)*(elite?ELITE_HEALTH:1);
   return Math.round(def.hp*scale);
 }
 function mobHealthScale(level,path){
-  return FLOOR_MOB_HEALTH[level]*routeEnemyHealthScale(level,path);
+  return FLOOR_MOB_HEALTH[level]*(level>0?(routes[path].enemyHealth??1):1);
 }
 function spawn(id,x,y,elite=false,homeRoom=chamber){
   const def=beasts[id], hp=enemyHealth(id,stage,route,elite);
@@ -1767,9 +1764,10 @@ function exitDetails(path,level){
   const bossNote=bossId?`\n${beasts[bossId].name} · ${enemyHealth(bossId,level,path)} 点生命。`:"";
   const scaling=`第 ${level+1} 层普通怪生命比当前层约 ${increase>=0?"+":""}${increase}%。${bossNote}`;
   if(path==="elite")return `${recovery}\n小怪和精英伤害 +${Math.round((rules.enemyDamage-1)*100)}%，出手前摇缩短 ${Math.round((1-rules.enemyWindup)*100)}%。${scaling}\n前厅和轮转中庭各多一只精英，生命 +${Math.round((ELITE_HEALTH-1)*100)}%、移速 +${Math.round((ELITE_SPEED-1)*100)}%。击败两只可额外三选一，立即获得一件遗物。`;
-  if(path==="shrine")return `${recovery}\n小怪最大生命比同层基础值低 ${Math.round((1-rules.enemyHealth)*100)}%。${scaling}\n本层战斗中获得的余烬减少 ${Math.round((1-rules.ashGain)*100)}%。`;
   const reduction=Math.round((1-rules.enemyHealth)*100);
-  return `${recovery}\n下一层所有敌人最大生命比同层基础值低 ${reduction}%。${scaling}\n肃清下一层后，烛台旁的钟鸣武库提供 ${ARMORY_OFFER_COUNT} 把随机武器，可选一把。`;
+  const healthEffect=`下一层普通怪和精英怪的最大生命比同层基础值低 ${reduction}%。`;
+  if(path==="shrine")return `${recovery}\n${healthEffect}${scaling}\n本层战斗中获得的余烬减少 ${Math.round((1-rules.ashGain)*100)}%。`;
+  return `${recovery}\n${healthEffect}${scaling}\n肃清下一层后，烛台旁的钟鸣武库提供 ${ARMORY_OFFER_COUNT} 把随机武器，可选一把。`;
 }
 function nearInteraction(){
   if(floor.cleared===floor.nodes.length){
