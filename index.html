@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0e0c10">
+  <meta name="description" content="在永夜的钟楼，以刃与余烬穿越七重试炼。">
+  <title>余烬回响 · ASHWAKE</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="app">
+    <section id="home" class="home" aria-label="游戏主界面">
+      <header class="mast">
+        <div class="brand"><span class="sigil" aria-hidden="true">♢</span><span>ASHWAKE<small>余烬回响</small></span></div>
+        <div class="mast-actions"><button id="guide" class="quiet">操作指南</button><button id="sound" class="quiet sound" aria-label="切换音效" aria-pressed="true">◖)) <span>音效</span></button></div>
+      </header>
+      <div class="hero">
+        <div class="hero-shade"></div><div class="frame" aria-hidden="true"></div><div id="embers" aria-hidden="true"></div>
+        <div class="hero-copy">
+          <div class="eyebrow"><i></i> 永夜钟楼 <span> / </span> 2D 动作肉鸽</div>
+          <h1>余烬<span>回响</span></h1>
+          <div class="wordmark">A S H W A K E</div>
+          <p>当最后一口钟在永夜里沉寂，<br>你是唯一还能将它敲响的人。</p>
+          <div class="primary-actions"><button id="start" class="primary"><span aria-hidden="true">◇</span> 开始远征 <b>↗</b></button><button id="records" class="outline">远征档案</button></div>
+        </div>
+        <div class="hero-caption"><i></i><div>长夜蚀日<small>THE BELL OF NIGHT</small></div></div>
+      </div>
+      <footer class="home-footer">
+        <div class="footer-item"><span>⌁</span><div>移动<small class="desktop-hint">W A S D / 方向键</small><small class="touch-hint">拖动摇杆</small></div></div>
+        <div class="footer-item"><span>✧</span><div>普攻<small class="desktop-hint">鼠标左键 / J</small><small class="touch-hint">点按或长按</small></div></div>
+        <div class="footer-item"><span>➵</span><div>闪步<small class="desktop-hint">SPACE</small><small class="touch-hint">点按闪步键</small></div></div>
+        <div class="home-best" id="best"></div>
+      </footer>
+    </section>
+    <section id="game" class="game" aria-label="战斗界面" hidden>
+      <canvas id="field" aria-label="余烬回响战斗场地"></canvas>
+      <div class="game-top">
+        <div class="vitals"><div class="vital-label"><span id="heroName">守钟人</span><span id="hpText"></span></div><div class="bar hp"><i id="hpFill"></i></div><div class="bar ash"><i id="ashFill"></i></div><div class="loadout"><b id="weaponName">余烬刃</b><span id="spareName"></span></div></div>
+        <div class="room"><div id="roomText"></div><div id="chamberText"></div><div id="traverse" aria-label="试炼进度"></div><div id="routeText"></div></div>
+        <div class="game-actions"><div id="killText"></div><button id="mapButton" class="quiet" aria-label="查看地宫地图" title="地宫地图（M）">图</button><button id="relicButton" class="quiet" aria-haspopup="dialog" aria-keyshortcuts="I" title="查看本局遗物（I）">遗物</button><button id="pause" class="quiet" aria-label="暂停">Ⅱ</button></div>
+      </div>
+      <div id="bossHud" class="boss-hud" hidden><b id="bossName"></b><div class="bar"><i id="bossFill"></i></div></div>
+      <div id="banner" class="banner" aria-live="polite"></div>
+      <button id="interact" class="quiet" hidden><kbd>F</kbd><span id="interactLabel"></span><small id="interactDetail"></small></button>
+      <div class="game-bottom">
+        <div class="relic-row" id="relicRow"></div>
+        <div class="abilities">
+          <button data-act="attack" aria-label="普攻" aria-keyshortcuts="J"><kbd>J</kbd><span class="control-icon" aria-hidden="true">⚔︎</span><span class="control-name">普攻</span><span class="control-state" id="swordState">横扫</span><i></i></button>
+          <button data-act="dash" aria-label="闪步" aria-keyshortcuts="Space"><kbd>空格</kbd><span class="control-icon" aria-hidden="true">➤</span><span class="control-name">闪步</span><span class="control-state" id="dashState">闪步</span><i></i></button>
+          <button data-act="skill" aria-label="焚印" aria-keyshortcuts="E"><kbd>E</kbd><span class="control-icon" aria-hidden="true">✦</span><span class="control-name">焚印</span><span class="control-state" id="orbState">焚印</span><i></i></button>
+          <button data-act="ult" aria-label="丧钟" aria-keyshortcuts="Q"><kbd>Q</kbd><span class="control-icon bell-icon" aria-hidden="true"></span><span class="control-name">丧钟</span><span class="control-state" id="ultState">余烬 0%</span><i></i></button>
+          <button data-act="weapon" id="weaponSkill" aria-label="武器专属技" aria-keyshortcuts="R"><kbd>R</kbd><span class="control-icon" aria-hidden="true">✧</span><span class="control-name">武技</span><span class="control-state" id="weaponState">武技</span><i></i></button>
+          <button data-act="switch" id="weaponSwap" aria-label="切换武器" aria-keyshortcuts="T"><kbd>T</kbd><span class="control-icon" aria-hidden="true">⇄</span><span class="control-name">切换</span><span class="control-state" id="switchState">切武器</span><i></i></button>
+        </div>
+        <div class="combat-tip" id="combatTip"></div>
+      </div>
+      <div id="touchMove" aria-label="浮动移动摇杆"><div id="stick" aria-hidden="true"><i></i></div></div>
+    </section>
+    <div id="curtain" class="curtain" hidden><section id="panel" class="panel" role="dialog" aria-modal="true" aria-labelledby="panelTitle"></section></div>
+  </main>
+  <script src="maze.js" defer></script>
+  <script src="weapons.js" defer></script>
+  <script src="merchant.js" defer></script>
+  <script src="combat-audio.js" defer></script>
+  <script src="game.js" defer></script>
+</body>
+</html>
