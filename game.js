@@ -50,7 +50,7 @@ const beasts = {
   archer:{name:"青灯引魂者", hp:74, speed:106, r:19, size:83, color:"#73e0d6", frame:ARCHER_FRAME, tell:.63, damage:10},
   brute: {name:"紫脊石像", hp:144, speed:83, r:27, size:102, color:"#cfa1fa", frame:[49,572,430,389], tell:.78, damage:18},
   eye:   {name:"蚀日之眼", hp:90, speed:122, r:18, size:78, color:"#ffae5b", frame:[575,542,330,408], tell:.71, damage:15},
-  warden:{name:"铸钟守卫", hp:2250, speed:94, r:39, size:151, color:"#d1abeb", frame:[955,513,560,461], tell:.83, damage:22, boss:true},
+  warden:{name:"铸钟守卫", hp:3000, speed:94, r:39, size:151, color:"#d1abeb", frame:[955,513,560,461], tell:.83, damage:22, boss:true},
   bell:  {name:"永夜钟主", hp:6000, speed:111, r:49, size:184, color:"#ffaf67", frame:[955,513,560,461], tell:.76, damage:26, boss:true},
   sentinel:{name:"拦路钟影", hp:76, speed:0, r:22, size:82, color:"#ffc582", frame:ARCHER_FRAME, tell:.40, damage:20, anchored:true}
 };
