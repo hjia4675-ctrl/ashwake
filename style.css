@@ -79,12 +79,15 @@
   --hud-right:calc(10px + var(--safe-right));
   --hud-top:calc(8px + var(--safe-top));
   --hud-bottom:calc(13px + var(--safe-bottom));
-  --key:clamp(48px,11.2vmin,67px);
+  --key:clamp(56px,14vmin,75px);
+  --action-width:calc(3 * var(--key) + 43px);
+  --interact-width:min(160px,29%);
   --stick-size:clamp(82px,21vmin,116px);
+  --stick-rest:max(50px,calc(var(--stick-size) / 2 + 4px));
   min-height:0;height:var(--view-height);cursor:default;touch-action:manipulation;overscroll-behavior:none;-webkit-touch-callout:none
 }
 .touch-ui #field{touch-action:none}
-.touch-ui.touch-large .game{--key:clamp(54px,13.2vmin,76px);--stick-size:clamp(90px,24vmin,126px)}
+.touch-ui.touch-large .game{--key:clamp(62px,15.5vmin,84px);--stick-size:clamp(90px,24vmin,126px)}
 .touch-ui .game-top{z-index:4;min-height:0;gap:6px;padding:var(--hud-top) var(--hud-right) 14px var(--hud-left)}
 .touch-ui .vitals{width:clamp(84px,24%,175px);flex:none;min-width:0}
 .touch-ui .vital-label{font-size:11px;margin-bottom:5px;gap:3px;letter-spacing:0}
@@ -99,7 +102,7 @@
 .touch-ui .boss-hud{top:calc(var(--hud-top) + 68px);width:min(58%,390px)}
 .touch-ui .banner{top:24%;letter-spacing:.07em}
 .touch-ui .game-bottom{z-index:3;height:calc(2 * var(--key) + 37px);min-height:0;bottom:var(--hud-bottom);left:auto;right:var(--hud-right);padding:0;background:none}
-.touch-ui .abilities{position:relative;width:calc(3 * var(--key) + 43px);height:100%;margin:0;display:block}
+.touch-ui .abilities{position:relative;width:var(--action-width);height:100%;margin:0;display:block}
 .touch-ui .game .abilities button{
   --tint:#f3b083;--size:var(--key);--edge:0px;--rise:0px;
   position:absolute;right:var(--edge);bottom:var(--rise);width:var(--size);height:var(--size);min-width:0;
@@ -120,9 +123,9 @@
 .touch-ui .game .abilities button.link,.touch-ui .game .abilities button.ready[data-act=ult]{border-color:var(--tint);box-shadow:0 0 19px #edac8fac,inset 0 0 13px #f1aa6d42}
 .touch-ui .abilities kbd,.touch-ui .abilities .control-state{display:none}
 .touch-ui .abilities .control-icon,.touch-ui .abilities .control-name{display:block;position:relative;z-index:1;line-height:1;color:var(--tint)}
-.touch-ui .abilities .control-icon{font:700 clamp(19px,5.3vmin,28px)/1 system-ui}
-.touch-ui .abilities [data-act=attack] .control-icon{font-size:clamp(24px,7vmin,36px)}
-.touch-ui .abilities .control-name{font:700 10px/1.15 system-ui;color:#ffe5d2;white-space:nowrap}
+.touch-ui .abilities .control-icon{font:700 clamp(22px,5.8vmin,31px)/1 system-ui}
+.touch-ui .abilities [data-act=attack] .control-icon{font-size:clamp(27px,7.5vmin,39px)}
+.touch-ui .abilities .control-name{font:700 11px/1.15 system-ui;color:#ffe5d2;white-space:nowrap}
 .touch-ui .abilities .bell-icon{width:17px;height:15px;border:1.5px solid currentColor;border-radius:55% 55% 20% 20%;margin:2px 0 4px}
 .touch-ui .abilities .bell-icon::after{content:"";position:absolute;left:6px;bottom:-5px;width:3px;height:3px;border-radius:50%;background:currentColor}
 .touch-ui .abilities [data-act=ult]:not(.ready) .control-icon,.touch-ui .abilities .cooling .control-icon{opacity:.17}
@@ -137,18 +140,27 @@
   -webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2px));
   mask:radial-gradient(farthest-side,transparent calc(100% - 3px),#000 calc(100% - 2px))}
 .touch-ui #touchMove{display:block;position:absolute;z-index:2;left:var(--hud-left);bottom:var(--hud-bottom);width:min(44%,350px);height:clamp(145px,38%,263px);touch-action:none}
-.touch-ui #stick{display:grid;place-items:center;pointer-events:none;left:var(--stick-x,50px);top:var(--stick-y,calc(100% - 52px));bottom:auto;
+.touch-ui #stick{display:grid;place-items:center;pointer-events:none;left:var(--stick-x,var(--stick-rest));top:var(--stick-y,calc(100% - max(52px,var(--stick-rest))));bottom:auto;
   transform:translate(-50%,-50%);width:var(--stick-size);height:var(--stick-size);border-radius:50%;border:1px solid #e8bfab8a;
   background:radial-gradient(circle,#39263499 31%,#241924a6 34%,#100c1759 72%);box-shadow:inset 0 0 0 5px #8c67533b,0 3px 18px #08060ca6}
 .touch-ui #stick::before{content:"";inset:11px;position:absolute;border:1px dashed #f2d0b34a;border-radius:50%}
 .touch-ui #stick i{position:relative;inset:auto;width:44%;height:44%;border:1px solid #f6d3b7b4;background:radial-gradient(circle at 42% 33%,#ac806eae,#322034e6);box-shadow:0 2px 8px #110b17bc}
 .touch-ui #stick.is-pressed{border-color:#ffd7b7;box-shadow:inset 0 0 0 5px #a58c5561,0 0 20px #f2b38949}
-.touch-ui #interact{z-index:5;left:50%;bottom:var(--hud-bottom);transform:translateX(-50%);border-radius:10px;padding:8px 12px;min-height:44px;max-width:29%}
+.touch-ui #interact{
+  z-index:5;bottom:var(--hud-bottom);width:var(--interact-width);max-width:none;
+  left:min(50%,calc(100% - var(--hud-right) - var(--action-width) - var(--interact-width) / 2 - 6px));
+  transform:translateX(-50%);border-radius:10px;padding:8px 12px;min-height:44px;
+  transition:background .2s,border-color .2s
+}
 .touch-ui #interact kbd,.touch-ui #interact small,.touch-ui .panel .card kbd{display:none}
 .touch-ui.touch-left .game-bottom{left:var(--hud-left);right:auto}
 .touch-ui.touch-left .game .abilities button{left:var(--edge);right:auto}
+.touch-ui.touch-left #interact{
+  left:auto;right:min(50%,calc(100% - var(--hud-left) - var(--action-width) - var(--interact-width) / 2 - 6px));
+  transform:translateX(50%)
+}
 .touch-ui.touch-left #touchMove{left:auto;right:var(--hud-right)}
-.touch-ui.touch-left #stick{left:var(--stick-x,calc(100% - 50px))}
+.touch-ui.touch-left #stick{left:var(--stick-x,calc(100% - var(--stick-rest)))}
 .touch-ui .curtain{padding:max(10px,var(--safe-top)) max(10px,var(--safe-right)) max(10px,var(--safe-bottom)) max(10px,var(--safe-left));grid-template-rows:minmax(0,1fr);overscroll-behavior:contain}
 .touch-ui.touch-rotated .curtain{position:absolute}
 .touch-ui .panel{padding:clamp(13px,4vmin,24px);touch-action:pan-y;scrollbar-width:thin}
@@ -157,6 +169,46 @@
 .touch-ui .route-options,.touch-ui .rewards,.touch-ui .rewards.bonus{grid-template-columns:repeat(3,minmax(0,1fr))}
 .touch-ui .floor-map{height:clamp(145px,calc(var(--view-height) * .46),336px)}
 .touch-ui .inventory-list{max-height:min(calc(var(--view-height) * .57),520px)}
+.touch-ui .merchant-panel{
+  display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:auto auto auto minmax(0,1fr);
+  gap:5px 10px;min-height:0;width:min(100%,760px);height:min(100%,310px);
+  overflow:hidden;padding:12px 14px;isolation:isolate
+}
+.touch-ui .merchant-panel:has(.merchant-relics){height:min(100%,560px)}
+.touch-ui .merchant-panel > :not(.choices){margin:0}
+.touch-ui .merchant-panel .panel-title{grid-area:1/1;font-size:clamp(22px,6vmin,34px);line-height:1.1}
+.touch-ui .merchant-panel p{grid-area:2/1;font-size:12px;line-height:1.4;color:#f0caac}
+.touch-ui .merchant-panel > .choices{
+  grid-area:4/1/5/-1;min-height:0;min-width:0;gap:7px;padding:2px 4px 4px 2px;
+  grid-auto-rows:max-content;align-content:start;
+  overflow:auto;overscroll-behavior:contain;touch-action:pan-y;scrollbar-color:#b1826c #251923
+}
+.touch-ui.touch-rotated .merchant-panel > .choices{touch-action:none}
+.touch-ui .merchant-panel .merchant-options{grid-template-columns:minmax(0,2fr) minmax(0,3fr)}
+.touch-ui .merchant-panel .armory.replace{grid-template-columns:repeat(2,minmax(0,1fr))}
+.touch-ui .merchant-panel .merchant-relics{grid-template-columns:repeat(3,minmax(0,1fr))}
+.touch-ui .merchant-panel .card{
+  min-width:0;min-height:44px;padding:8px 10px;gap:4px;
+  overflow-wrap:anywhere;text-align:left;transform:none
+}
+.touch-ui .merchant-panel .card .icon{display:none}
+.touch-ui .merchant-panel .card b{font-size:14px}
+.touch-ui .merchant-panel .card small{font-size:12px;line-height:1.4}
+.touch-ui .merchant-panel .card:disabled{opacity:.7}
+.touch-ui .merchant-panel .card:not(:disabled)::after{
+  align-self:flex-start;margin-top:auto;padding:4px 8px;border-radius:4px;
+  background:#5b3a34;color:#ffe4b6;font-size:11px;font-weight:700
+}
+.touch-ui .merchant-panel .merchant-options .merchant-relic:not(:disabled)::after{content:"查看遗物"}
+.touch-ui .merchant-panel .merchant-options .armament:not(:disabled)::after{content:"购买武器"}
+.touch-ui .merchant-panel .merchant-relics .card:not(:disabled)::after{content:"购买遗物"}
+.touch-ui .merchant-panel .armory.replace .card:not(:disabled)::after{content:"换下这把"}
+.touch-ui .merchant-panel .armory .card:not(:disabled)::after{position:absolute;top:7px;right:8px}
+.touch-ui .merchant-panel .armory .card:not(:disabled) b{padding-right:68px}
+.touch-ui .merchant-panel .merchant-schools{grid-area:3/1/4/-1;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}
+.touch-ui .merchant-panel .merchant-schools button{min-width:0;padding:3px 6px;font-size:12px;white-space:nowrap}
+.touch-ui .merchant-panel .button-row{grid-area:1/2/3/3;align-self:start;justify-content:flex-end;gap:6px}
+.touch-ui .merchant-panel .button-row button{min-height:44px;padding:4px 12px}
 .touch-options{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .touch-ui button:focus:not(:focus-visible){outline:none}
 .hero{background-image:image-set(url('cover.webp') type('image/webp'),url('cover.jpg') type('image/jpeg'))}

@@ -1359,9 +1359,14 @@ function drawHud(){
 
 function showModal(body, choices=[]){
   if($("curtain").hidden)previousFocus=document.activeElement;
-  modalChoices=choices;$("panel").innerHTML=body;$("curtain").hidden=false;
+  const panel=$("panel"), touchMerchant=touchUI&&state==="merchant";
+  panel.classList.toggle("merchant-panel",touchMerchant);
+  modalChoices=choices;panel.innerHTML=body;$("curtain").hidden=false;
   $("home").inert=true;$("game").inert=true;
-  $("panel").querySelector("button")?.focus();
+  if(touchMerchant){
+    panel.scrollTop=0;
+    panel.querySelector("button:not(:disabled)")?.focus({preventScroll:true});
+  }else panel.querySelector("button")?.focus();
 }
 function closeModal(){
   $("curtain").hidden=true;$("home").inert=false;$("game").inert=false;modalChoices=[];
@@ -1752,12 +1757,12 @@ for(const b of skillButtons){
 document.addEventListener("pointerdown",e=>{
   if(e.pointerType==="touch"&&!touchUI){touchUI=true;syncTouchLayout();resize();if(player&&state!=="home")drawHud()}
 },true);
-function supportTouchTaps(region,selector="button"){
+function supportTouchTaps(region,selector="button",useFallback=()=>true){
   const active=new Map(), handled=new WeakMap();
   region.addEventListener("pointerdown",e=>{
     if(e.pointerType!=="touch")return;
     const button=e.target.closest(selector);
-    if(button&&!button.disabled)active.set(e.pointerId,{button,x:e.clientX,y:e.clientY});
+    if(button&&!button.disabled&&useFallback(button))active.set(e.pointerId,{button,x:e.clientX,y:e.clientY});
   });
   region.addEventListener("pointermove",e=>{
     const tap=active.get(e.pointerId);
@@ -1776,9 +1781,35 @@ function supportTouchTaps(region,selector="button"){
   },true);
 }
 supportTouchTaps($("home"));
-supportTouchTaps($("game"),"#pause, #mapButton, #relicButton, #interact");
-supportTouchTaps($("panel"));
-$("panel").addEventListener("click",e=>{
+// A shop tap can replace the button under the finger before the browser dispatches its click.
+supportTouchTaps($("game"),"#pause, #mapButton, #relicButton, #interact",button=>button.id!=="interact"||nearby?.type!=="merchant");
+const modalPanel=$("panel");
+supportTouchTaps(modalPanel,"button",()=>state!=="merchant");
+let shopSwipe=null, shopSwiped=false;
+modalPanel.addEventListener("pointerdown",e=>{
+  if(shopSwipe)return;
+  shopSwiped=false;
+  if(e.pointerType!=="touch"||!touchRotated||state!=="merchant")return;
+  const items=e.target.closest(".choices");
+  if(items&&items.scrollHeight>items.clientHeight){
+    shopSwipe={id:e.pointerId,items,x:e.clientX,y:e.clientY,top:items.scrollTop};
+  }
+});
+modalPanel.addEventListener("pointermove",e=>{
+  if(shopSwipe?.id!==e.pointerId)return;
+  const {x,y}=controlDelta(e,shopSwipe.x,shopSwipe.y);
+  if(!shopSwiped){
+    if(Math.abs(y)<9||Math.abs(y)<Math.abs(x))return;
+    shopSwiped=true;
+    shopSwipe.items.setPointerCapture(e.pointerId);
+  }
+  shopSwipe.items.scrollTop=shopSwipe.top-y;
+});
+for(const type of ["pointerup","pointercancel"]){
+  modalPanel.addEventListener(type,e=>{if(shopSwipe?.id===e.pointerId)shopSwipe=null});
+}
+modalPanel.addEventListener("click",e=>{
+  if(shopSwiped&&e.detail>0){shopSwiped=false;return}
   const button=e.target.closest("[data-pick]");if(button)modalChoices[Number(button.dataset.pick)]?.();
 });
 window.addEventListener("keydown",e=>{

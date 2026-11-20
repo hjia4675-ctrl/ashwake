@@ -38,7 +38,9 @@ function showMerchant(){
   const ownsWeapon=player.weapons.includes(shop.weapon);
   const weaponDisabled=ownsWeapon||player.ash<MERCHANT_PRICE;
   const relicDisabled=!relics.some(canTakeRelic);
-  const relicOffer=`<button class="card merchant-relic" data-pick="0"${relicDisabled?" disabled":""}><span class="icon" aria-hidden="true">◈</span><kbd>1</kbd><b>挑选遗物</b><small>${relicDisabled?"所有遗物都已达上限。":RELIC_STACK_NOTE}</small></button>`;
+  let relicNote=touchUI?"按流派浏览。每件遗物都标有叠加上限。":RELIC_STACK_NOTE;
+  if(relicDisabled)relicNote="所有遗物都已达上限。";
+  const relicOffer=`<button class="card merchant-relic" data-pick="0"${relicDisabled?" disabled":""}><span class="icon" aria-hidden="true">◈</span><kbd>1</kbd><b>挑选遗物</b><small>${relicNote}</small></button>`;
   const weaponOffer=weaponCard(shop.weapon,1,weaponDisabled);
   const note=merchantBalance()+(ownsWeapon?" 这层售卖的武器已在你的行囊里。":"");
   showModal(heading("收钟人",note)+`<div class="choices two armory merchant-options">${relicOffer}${weaponOffer}</div>`+
