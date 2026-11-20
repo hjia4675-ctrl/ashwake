@@ -59,7 +59,7 @@ const schools = {
     ["quick","⌁","亡风之羽","普攻的出招和收招时间缩短 15%。",p=>p.haste*=.85],
     ["cinder","♨","沸火余烬",`每次普攻最多点燃 ${CINDER.targets} 个目标。每份在 1.8 秒内对每个点燃目标造成 ${CINDER.ticks*CINDER.damage} 点伤害。再次点燃刷新持续时间。`,p=>p.burn++],
     ["cleaver","✹","回火刃尖","武器与余烬刃的第三段普攻伤害提高 30%。",p=>p.finisherPower*=1.3],
-    ["cadence","♩","拍火之谱","普攻时间缩短 10%，接招窗口延长 0.10 秒。完美接招的伤害加成提高 8 个百分点，命中时额外获得 1 点余烬。",p=>{p.haste*=.90;p.linkEase+=.05;p.perfectPower+=.08;p.perfectAsh++}]
+    ["cadence","♩","拍火之谱","普攻时间缩短 10%，接招窗口最多延长 0.10 秒，受单段普攻时长限制。完美接招的伤害加成提高 8 个百分点，命中时额外获得 1 点余烬。",p=>{p.haste*=.90;p.linkEase+=.05;p.perfectPower+=.08;p.perfectAsh++}]
   ]},
   dash:{name:"闪步", relics:[
     ["steps","⟡","幽步齿轮","闪步冷却缩短 25%。",p=>p.dashRate*=.75,RESTRICTED_RELIC_STACK_LIMIT],
@@ -507,8 +507,15 @@ function aim(mouse,max,forward){
   return target?angle(player,target):player.a;
 }
 function linkOpen(p){
+  if(p.buffer||p.comboT<=0||p.attackTotal<=0||p.dash>0||p.parry>0)return false;
   const margin=.10+p.linkEase;
-  return p.comboT>0&&p.attack<=margin&&p.comboT>=(p.comboSpan??.68)-p.attackTotal-margin;
+  const lead=Math.min(margin,p.attackTotal*.30);
+  const grace=Math.min(margin,Math.max(.045,p.attackTotal*.24));
+  return p.attack<=lead&&p.comboT>=(p.comboSpan??.68)-p.attackTotal-grace;
+}
+function queueBasicAttack(mouse){
+  const p=player;
+  if(!p.buffer&&p.dash<=0)p.buffer={mouse,perfect:linkOpen(p)};
 }
 function perfectAttackScale(p,heavy){return (heavy?1.22:1.14)+p.perfectPower}
 function slash(mouse,perfect=false){
@@ -880,9 +887,6 @@ function tick(dt){
     if(p.pending&&p.attack<=p.pending.at){const swing=p.pending;p.pending=null;if(swing.weapon)resolveWeapon(swing);else resolveSlash(swing)}
     const attackHeld=controlPointers.has(skillButtons[0]);
     if(len>.08&&p.attack===0&&p.parry===0&&!pointer.down&&!attackHeld)p.a=Math.atan2(dy,dx);
-    if(actions.has("attack")&&(p.attack===0||p.attack<=.12+p.linkEase)){
-      p.buffer={mouse:lastAction==="mouse",perfect:linkOpen(p)};
-    }
     if(p.attack===0&&p.parry===0){
       if(p.buffer){const input=p.buffer;p.buffer=null;slash(input.mouse,input.perfect)}
       else if(keys.has("KeyJ")||pointer.down||attackHeld)slash(lastAction==="mouse"&&!attackHeld);
@@ -1461,6 +1465,7 @@ function drawTouchAim(){
 }
 function draw(){
   if(fieldLost||!ctx||ctx.isContextLost?.())return;
+  if(state==="fight")syncLinkCue();
   ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle="#0d0a10";ctx.fillRect(0,0,canvas.width/dpr,canvas.height/dpr);ctx.translate(ox,oy);ctx.scale(scale,scale);
   ctx.save();ctx.beginPath();ctx.rect(0,0,W,H);ctx.clip();
   if(!smallMotion&&shake>0)ctx.translate(between(-shake,shake)*.63,between(-shake,shake)*.63);
@@ -1501,6 +1506,17 @@ function stepEffects(dt){
 }
 
 const skillButtons=[...document.querySelectorAll(".abilities button")];
+let linkCue=false;
+function syncLinkCue(force=false){
+  const link=linkOpen(player);
+  if(link===linkCue&&!force)return;
+  linkCue=link;
+  const nextMove=player.comboT>0?(player.combo+1)%3:0;
+  const next=(activeWeapon()?.moves??swordMoves)[nextMove].name;
+  skillButtons[0].classList.toggle("link",link);
+  const label=link?(touchUI?"接刃":"接刃 · "+next):next;
+  if($("swordState").textContent!==label)$("swordState").textContent=label;
+}
 function drawHud(){
   const p=player,name=rooms[stage][0], boss=foes.find(e=>e.boss);
   $("hpText").textContent=`${Math.ceil(p.hp)} / ${p.maxHp}`;
@@ -1520,15 +1536,14 @@ function drawHud(){
   const charges=[p.attack===0?1:1-p.attack/p.attackTotal,1-p.dashCd/dashCooldown(p),1-p.skill/(EMBER_ORB.cooldown*p.skillRate),p.ash/100,activeWeapon()?1-p.weaponCd/p.weaponCdTotal:0,p.weapons.length===2?1:0];
   const cooling=[false,p.dashCd>0,p.skill>0,false,p.weaponCd>0,false];
   skillButtons.forEach((b,i)=>{b.style.setProperty("--charge",clamp(charges[i],0,1)*100+"%");b.classList.toggle("ready",charges[i]>=.999);b.classList.toggle("cooling",cooling[i])});
-  const weapon=activeWeapon(), spare=weaponBook[p.weapons[1-p.weaponSlot]], nextMove=p.comboT>0?(p.combo+1)%3:0;
-  const link=linkOpen(p), next=(weapon?.moves??swordMoves)[nextMove].name;
+  const weapon=activeWeapon(), spare=weaponBook[p.weapons[1-p.weaponSlot]];
   $("weaponName").textContent=weapon?.name??"余烬刃";
   $("weaponName").style.color=weapon?.color??"";
   $("spareName").textContent=spare?" / "+spare.name:"";
   $("weaponSwap").title=spare?"切换到"+spare.name+"（T）":"拾取第二把武器后可切换";
   $("weaponSkill").title=weapon?`${weapon.skill}（R） · ${weapon.detail}`:"拾取武器后解锁专属技能";
   $("weaponSkill").disabled=!weapon;$("weaponSwap").disabled=!spare;
-  skillButtons[0].classList.toggle("link",link);$("swordState").textContent=link?(touchUI?"接刃":"接刃 · "+next):next;
+  syncLinkCue(true);
   const countdown=seconds=>Math.max(.1,seconds).toFixed(1)+(touchUI?"":" 秒");
   $("weaponState").textContent=p.weaponCd>0?countdown(p.weaponCd):weapon?.skill??"武技";
   $("switchState").textContent="切武器";
@@ -1873,7 +1888,7 @@ canvas.addEventListener("pointermove",e=>{if(e.pointerType!=="touch"&&state==="f
 canvas.addEventListener("pointerdown",e=>{
   if(state!=="fight"||e.pointerType==="touch"||e.button!==0||pointer.id!==null)return;
   wakeAudio();lastAction="mouse";point(e);pointer.id=e.pointerId;pointer.down=true;
-  actions.add("attack");canvas.setPointerCapture(e.pointerId);e.preventDefault();
+  queueBasicAttack(true);canvas.setPointerCapture(e.pointerId);e.preventDefault();
 });
 for(const type of ["pointerup","pointercancel","lostpointercapture"])canvas.addEventListener(type,e=>{if(e.pointerId===pointer.id)resetCanvasPointer()});
 canvas.addEventListener("contextmenu",e=>e.preventDefault());
@@ -1920,6 +1935,7 @@ for(const b of skillButtons){
     e.preventDefault();b.setPointerCapture(e.pointerId);wakeAudio();lastAction="touch";
     controlPointers.set(b,e.pointerId);b.classList.add("is-pressed");
     if(canAim)touchAim={id:e.pointerId,act,x:e.clientX,y:e.clientY,angle:null,dragged:false,strength:0};
+    else if(act==="attack")queueBasicAttack(false);
     else actions.add(act);
   };
   b.onpointermove=updateTouchAim;
@@ -1938,7 +1954,12 @@ for(const b of skillButtons){
   };
   b.onpointerup=e=>endPress(e,true);
   b.onpointercancel=b.onlostpointercapture=e=>endPress(e,false);
-  b.onclick=e=>{if(e.detail===0&&state==="fight"){lastAction="keyboard";actions.add(b.dataset.act)}};
+  b.onclick=e=>{
+    if(e.detail!==0||state!=="fight")return;
+    lastAction="keyboard";
+    if(b.dataset.act==="attack")queueBasicAttack(false);
+    else actions.add(b.dataset.act);
+  };
 }
 document.addEventListener("pointerdown",e=>{
   if(e.pointerType==="touch"&&!touchUI){touchUI=true;syncTouchLayout();resize();if(player&&state!=="home")drawHud()}
@@ -1997,7 +2018,7 @@ window.addEventListener("keydown",e=>{
   if(state!=="fight")return;
   if(scrollLockKeys.includes(e.code))e.preventDefault();
   keys.add(e.code);
-  if(e.code==="KeyJ"&&!e.repeat){lastAction="keyboard";actions.add("attack")}
+  if(e.code==="KeyJ"&&!e.repeat){lastAction="keyboard";queueBasicAttack(false)}
   if(!e.repeat){
     if(e.code==="Space")actions.add("dash");
     if(e.code==="KeyE")actions.add("skill");

@@ -193,6 +193,7 @@ function castWeapon(mouse,touch=null){
   const a=touch?.angle??(id==="shield"&&!mouse&&!touch?p.a:aim(mouse,aimRange,true));
   p.a=a;p.weaponCd=p.weaponCdTotal=weapon.cd;
   p.attack=p.attackTotal=Math.max(p.attack,.25);p.comboT=0;
+  if(p.buffer)p.buffer.perfect=false;
   sparks(p.x,p.y-15,weapon.color,14,166,a);tone(275,690,.23,.13,"triangle");
   switch(id){
     case "glaive":
