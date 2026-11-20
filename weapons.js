@@ -1,17 +1,18 @@
 "use strict";
 
 const J=(name,shape,damage,reach,cycle,wind,extra={})=>({name,shape,damage,reach,cycle,wind,...extra});
-const SHIELD_GUARD={time:.85,angle:1.42,bash:38,counter:72,falloff:.50};
+const SHIELD_GUARD={time:.95,angle:1.42,bash:42,counter:86,falloff:.50};
 const BOW_VOLLEY={damage:144,side:62,falloff:.54,spread:.18,stagger:.9};
+const DAGGER_LUNGE_DAMAGE=106, GAUNTLET_JUMP_SCALE=.55, GAUNTLET_SKILL_DAMAGE=96;
 const weaponBook={
   glaive:{name:"日蚀大剑",icon:"⚔",color:"#ffc079",role:"宽面压制 · 慢出手",basic:"两挥一圈。每段打中 1／2–3／第 4 个起的目标时，分别造成 100%／66%／36% 伤害。",moves:[J("开锋","arc",42,145,.50,.13,{arc:1.17,falloff:.66,crowdFalloff:.36}),J("反斩","arc",44,153,.53,.16,{arc:1.38,falloff:.66,crowdFalloff:.36}),J("日轮","area",52,115,.64,.22,{falloff:.66,crowdFalloff:.36})],skill:"断日",cd:9.5,detail:"两道重斩分别造成 58 和 40 点，第二斩延迟 0.38 秒。每斩沿用普攻的群伤递减。"},
   spear:{name:"白霜枪",icon:"➶",color:"#afedff",role:"长线穿刺 · 走廊压制",basic:"前两刺可命中两个目标。第三刺更宽，可命中四个并减速。额外目标承受 80% 伤害。",moves:[J("探锋","line",28,198,.34,.07,{width:14,limit:2,falloff:.8}),J("穿骨","line",33,211,.39,.09,{width:19,limit:2,falloff:.8}),J("霜贯","line",45,244,.53,.14,{width:23,limit:4,falloff:.8,slow:.9})],skill:"霜脊",cd:9.5,detail:"向前打出 430 距离的冰脊，至多击中四个敌人。首个受 96 点伤害，其余受 70%，均减速 2 秒。"},
   sickle:{name:"墓藤链镰",icon:"☾",color:"#bbeb91",role:"回旋牵引 · 需要站位",basic:"镰刃较宽。去程穿透时，后续目标受 72% 伤害，回程为 40%。第三抛更远，可多切中一个目标。",moves:[J("左掷","bolt",27,268,.46,.09,{offset:-.10,back:.4,size:17,limit:2,falloff:.72}),J("右掷","bolt",29,279,.49,.10,{offset:.10,back:.4,size:17,limit:2,falloff:.72}),J("回割","bolt",35,320,.61,.13,{back:.4,size:21,limit:3,falloff:.72})],skill:"收魂索",cd:10,detail:"扫过扇区，普通怪被拉近最多 115 距离。第一个目标受 78 点伤害，第 2–3 个承受 72%，第 4 个起承受 38%。"},
   bow:{name:"骨羽长弓",icon:"⌁",color:"#f8dfb9",role:"远程点杀 · 一线穿透",basic:"第二箭最多打两个目标，第二个承受 58%。第三箭最多打三个，后两个分别承受 62% 和 38%。",moves:[J("轻羽","bolt",36,470,.40,.08,{size:6,speed:980,limit:1}),J("连弦","bolt",41,490,.43,.09,{size:7,speed:1020,limit:2,falloff:.58}),J("贯星矢","bolt",58,535,.57,.16,{size:8,speed:1150,limit:3,pierce:[1,.62,.38]})],skill:"钉影",cd:9.5,detail:`重箭前两个目标分别受 ${BOW_VOLLEY.damage}、${Math.round(BOW_VOLLEY.damage*BOW_VOLLEY.falloff)} 点伤害。两侧各一支 ${BOW_VOLLEY.side} 点的箭。每个敌人最多中一箭，重箭打断首个命中的普通怪。`},
   hammer:{name:"炉心锤",icon:"◆",color:"#ffa778",role:"打断群怪 · 收招较重",basic:"砸击前侧地面。额外目标承受 74%，第 4 个起承受 34%。第三锤范围最大，可打断普通怪。",moves:[J("落砧","slam",43,72,.55,.18,{area:70,falloff:.74,crowdFalloff:.34}),J("裂石","slam",46,86,.58,.20,{area:76,falloff:.74,crowdFalloff:.34}),J("震炉","slam",57,75,.73,.26,{area:97,falloff:.74,crowdFalloff:.34,stagger:.33})],skill:"三重地裂",cd:11,detail:"前方三个震区依次炸开，每区首个目标受 58 点，第 2–3 个承受 75%，第 4 个起承受 38%。同一敌人最多中两次，第二次再乘 45%。"},
-  daggers:{name:"黑鸦双匕",icon:"⨯",color:"#e6b8ff",role:"贴身高频 · 穿阵脱身",basic:"左右快割后接范围更宽的追刺。每招小幅前移，额外目标承受 72% 伤害。",moves:[J("左掠","arc",19,71,.24,.045,{arc:.95,step:10,falloff:.72}),J("右掠","arc",20,74,.26,.047,{arc:1.04,step:12,falloff:.72}),J("追喙","line",31,92,.34,.075,{width:32,step:19,falloff:.72})],skill:"鸦影穿身",cd:9,detail:"突进最多 175 距离，0.50 秒内免伤。首个目标受 94 点伤害，沿途其余目标承受 68%。"},
-  gauntlets:{name:"雷纹拳套",icon:"ϟ",color:"#a6c9ff",role:"近身连锁 · 越打越密",basic:"三拳各打一个主目标，第三拳再向最多三个邻近敌人跳电，每跳 50% 伤害。",moves:[J("直拳","line",24,72,.27,.05,{width:20,step:14,limit:1}),J("钩拳","arc",27,80,.30,.06,{arc:.90,step:10,limit:1}),J("鸣拳","chain",39,97,.43,.09,{arc:.95,step:10,limit:1,jumps:3})],skill:"奔雷",cd:9.5,detail:"正面首个目标受 88 点伤害，随后向邻近敌人最多跳转四次，每跳 44 点。"},
-  shield:{name:"铜狮斗盾",icon:"⬟",color:"#ffe094",role:"抗压反击 · 需要看准出手",basic:"两次正面盾撞后以宽盾扫击，第三击可打断普通怪。额外目标承受 65% 伤害。",moves:[J("撞盾","arc",25,89,.33,.08,{arc:.84,step:13,falloff:.65}),J("顶肩","line",30,107,.36,.10,{width:31,step:17,falloff:.65}),J("狮扫","arc",37,111,.47,.12,{arc:1.30,stagger:.28,falloff:.65})],skill:"守门反震",cd:11.5,detail:`先盾击 ${SHIELD_GUARD.bash} 点，再宽角架盾 ${SHIELD_GUARD.time} 秒。挡住正面一次攻击时反震 ${SHIELD_GUARD.counter} 点，并打断普通怪。额外目标承受 50% 伤害。`},
+  daggers:{name:"黑鸦双匕",icon:"⨯",color:"#e6b8ff",role:"贴身高频 · 穿阵脱身",basic:"左右快割后接范围更宽的追刺。每招小幅前移，额外目标承受 72% 伤害。",moves:[J("左掠","arc",22,71,.24,.045,{arc:.95,step:10,falloff:.72}),J("右掠","arc",23,74,.26,.047,{arc:1.04,step:12,falloff:.72}),J("追喙","line",35,92,.34,.075,{width:32,step:19,falloff:.72})],skill:"鸦影穿身",cd:9,detail:`突进最多 175 距离，0.50 秒内免伤。首个目标受 ${DAGGER_LUNGE_DAMAGE} 点伤害，沿途其余目标承受 68%。`},
+  gauntlets:{name:"雷纹拳套",icon:"ϟ",color:"#a6c9ff",role:"近身连锁 · 越打越密",basic:`三拳各打一个主目标，第三拳再向最多三个邻近敌人跳电，每跳 ${Math.round(GAUNTLET_JUMP_SCALE*100)}% 伤害。`,moves:[J("直拳","line",26,72,.27,.05,{width:20,step:14,limit:1}),J("钩拳","arc",29,80,.30,.06,{arc:.90,step:10,limit:1}),J("鸣拳","chain",41,97,.43,.09,{arc:.95,step:10,limit:1,jumps:3,jumpScale:GAUNTLET_JUMP_SCALE})],skill:"奔雷",cd:9.5,detail:`正面首个目标受 ${GAUNTLET_SKILL_DAMAGE} 点伤害，随后向邻近敌人最多跳转四次，每跳 ${GAUNTLET_SKILL_DAMAGE/2} 点。`},
+  shield:{name:"铜狮斗盾",icon:"⬟",color:"#ffe094",role:"抗压反击 · 需要看准出手",basic:"两次正面盾撞后以宽盾扫击，第三击可打断普通怪。额外目标承受 65% 伤害。",moves:[J("撞盾","arc",27,89,.33,.08,{arc:.84,step:13,falloff:.65}),J("顶肩","line",32,107,.36,.10,{width:31,step:17,falloff:.65}),J("狮扫","arc",40,111,.47,.12,{arc:1.30,stagger:.28,falloff:.65})],skill:"守门反震",cd:11.5,detail:`先盾击 ${SHIELD_GUARD.bash} 点，再宽角架盾 ${SHIELD_GUARD.time} 秒。挡住正面一次攻击时反震 ${SHIELD_GUARD.counter} 点，并打断普通怪。额外目标承受 50% 伤害。`},
   prism:{name:"折光晶杖",icon:"◇",color:"#a5ffe7",role:"远程溅射 · 连击蓄尾",basic:"晶弹命中后，最多溅射三个邻近目标，各承受 38% 伤害。第三弹爆区更大。",moves:[J("碎晶","bolt",25,364,.37,.08,{size:8,speed:760,limit:1,splash:53}),J("冷辉","bolt",28,382,.40,.09,{size:9,speed:770,limit:1,splash:57}),J("折射","bolt",43,402,.53,.15,{size:11,speed:725,limit:1,splash:77})],skill:"棱光三棱",cd:10,detail:"在瞄准位置及两侧布下三处延迟爆光，每处首个目标受 66 点，第 2–3 个承受 68%，第 4 个起承受 40%。同一敌人最多中两次，第二次再乘 35%。"},
   bellstaff:{name:"缚灵手钟",icon:"♜",color:"#d2b3f7",role:"环状控场 · 需要调位",basic:"三段都是环形。额外目标承受 68%，第 4 个起承受 29%。第三圈打到内圈时再乘 66%。",moves:[J("轻鸣","area",25,94,.34,.07,{falloff:.68,crowdFalloff:.29}),J("回鸣","area",31,120,.40,.11,{falloff:.68,crowdFalloff:.29}),J("远鸣","area",52,193,.57,.18,{inner:72,falloff:.68,crowdFalloff:.29})],skill:"葬歌",cd:11.5,detail:"连响四次，每次 23 点。额外目标承受 70%，第 4 个起承受 38%，命中均刷新减速。"}
 };
@@ -81,12 +82,13 @@ function weaponStrike(origin,a,move,damage,cast){
     if(move.pull&&!e.boss){const pull=Math.min(move.pull,Math.max(0,dist(e,origin)-46));walkBody(floor,e,Math.cos(angle(e,origin))*pull,Math.sin(angle(e,origin))*pull)}
   }
   if(move.shape==="chain"&&targets.length){
+    const jumpDamage=damage*(move.jumpScale??.5);
     let from=targets[0];
     for(let i=0;i<move.jumps;i++){
       const next=weaponTargets(from,a,{shape:"area",reach:108}).find(e=>!cast.hits.has(e));
       if(!next)break;
       traceWeapon(from,angle(from,next),"lightning",dist(from,next),cast.color);
-      weaponHit(cast,next,damage*.5,angle(from,next),.2);from=next;
+      weaponHit(cast,next,jumpDamage,angle(from,next),.2);from=next;
     }
   }
   traceWeapon(origin,a,move.shape,move.reach,cast.color,{arc:move.arc,width:move.width});
@@ -213,9 +215,9 @@ function castWeapon(mouse,touch=null){
       const start={x:p.x,y:p.y};
       const end=weaponGround(p,a,175,p.r);Object.assign(p,end);p.inv=Math.max(p.inv,.50);
       for(let i=1;i<=4;i++){const ghost=range(start.x,start.y,a,dist(start,end)*i/5);fx.push({type:"ghost",...ghost,a,id,life:.24,max:.24})}
-      weaponStrike(start,a,{shape:"line",reach:dist(start,p)+12,width:32,falloff:.68},94,cast);break;
+      weaponStrike(start,a,{shape:"line",reach:dist(start,p)+12,width:32,falloff:.68},DAGGER_LUNGE_DAMAGE,cast);break;
     }
-    case "gauntlets":weaponStrike(p,a,{shape:"chain",reach:143,arc:1.03,limit:1,jumps:4},88,cast);break;
+    case "gauntlets":weaponStrike(p,a,{shape:"chain",reach:143,arc:1.03,limit:1,jumps:4},GAUNTLET_SKILL_DAMAGE,cast);break;
     case "shield":
       weaponStrike(p,a,{shape:"arc",reach:108,arc:.95,falloff:SHIELD_GUARD.falloff},SHIELD_GUARD.bash,cast);
       p.parry=SHIELD_GUARD.time;p.parryAngle=a;ring(p.x,p.y,48,weapon.color,.42);break;
