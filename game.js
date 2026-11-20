@@ -41,12 +41,19 @@ const SENTINEL_SWEEP={reach:265,arc:.72,recovery:2.05};
 const ARCHER_FRAME=[1083,77,353,402];
 const arenas = ["arena", "arena-2", "arena-3", "arena-4", "arena-5", "arena-6", "arena-7"];
 const art = {};
+const namedArt={hero:"hero-yellow.webp",openingSprites:"sprites-preview.webp",openingArena:"arena-preview.webp",sprites:"sprites.webp"};
+function artUrl(source){return source;}
 function requestArt(name,priority="auto",retry=false){
-  if(art[name]&&!retry)return art[name];
-  const source=name==="hero"?"hero-yellow.webp":name==="openingSprites"?"sprites-preview.webp":name==="sprites"?"sprites.webp":name===arenas[0]&&touchUI?"arena-entry.webp":name+".jpg";
-  const url = source;
+  if(art[name]&&!retry){
+    if(priority==="high")art[name].fetchPriority="high";
+    return art[name];
+  }
+  const mobileArena=touchUI&&arenas.includes(name);
+  const source=namedArt[name]??(mobileArena?(name===arenas[0]?"arena-entry.webp":name+"-mobile.webp"):name+".jpg");
+  const url=artUrl(source);
   const img=new Image();img.fetchPriority=priority;
   art[name]=img;
+  if(mobileArena)img.onerror=()=>{img.onerror=null;img.src=artUrl(name+".jpg")};
   img.src=retry&&!url.startsWith("data:")?url+"?retry="+Date.now():url;
   return img;
 }
@@ -287,9 +294,9 @@ function restoreExpedition(){
   lastAction="";last=mobileTime=nextMobileDraw=hudTime=0;
   resetInput();player.moveVX=player.moveVY=0;player.moving=false;
   debris=[];fx=[];floats=[];weaponTraces=[];bannerTimer=shake=flash=0;$("banner").classList.remove("show");
-  floor.field=null;invalidateScenery();loadSprites();requestArt(arenas[stage]);warmCombatAudio(stage);
+  floor.field=null;invalidateScenery();requestArt(arenas[stage],"high");warmCombatAudio(stage);
   $("home").hidden=true;$("game").hidden=false;state="pause";
-  nearby=nearInteraction();resize(false);drawHud();draw();showPauseMenu();
+  nearby=nearInteraction();resize(false);loadSprites(true);drawHud();draw();showPauseMenu();
   return true;
 }
 
@@ -324,6 +331,7 @@ function resize(paint=true){
   scale=Math.min(width/W,height/H);ox=(width-W*scale)*.5;oy=(height-H*scale)*.5;
   if(player&&state!=="home"){
     followCamera();
+    loadSprites();
     if(paint)draw();
   }
 }
@@ -402,7 +410,7 @@ function enter(name){
   route=name;
   const arena=arenas[stage];
   if(touchUI)for(const name of arenas)if(name!==arena)delete art[name];
-  requestArt(arena);
+  requestArt(arena,"high");
   if(stage>0){
     const supply=entrySupply(name);
     player.hp=Math.min(player.maxHp,player.hp+supply.hp);
@@ -477,15 +485,19 @@ function discover(){
     announce(chamberName(node),note+(floor.merchant?.node===node?" · 收钟人在此，肃清后可交易":""),1.65);
   }
 }
-function loadSprites(){
-  requestArt("sprites","high",Boolean(art.sprites?.complete&&!art.sprites.naturalWidth));
+function loadSprites(retry=false){
+  // The lightweight atlas covers native sprite size on ordinary phone viewports.
+  const preview=art.openingSprites;
+  if(touchUI&&scale*dpr<=.94&&preview?.complete&&preview.naturalWidth)return;
+  const failed=art.sprites?.complete&&!art.sprites.naturalWidth;
+  if(!failed||retry)requestArt("sprites","high",Boolean(failed));
 }
 function begin(){
   $("startLabel").textContent="开始远征";$("start").setAttribute("aria-busy","false");
-  loadSprites();
   wakeAudio(); $("home").hidden=true;$("game").hidden=false;
   slowMobile=false;cadenceFrames=lateFrames=mobileTime=nextMobileDraw=last=0;
   resize(false);
+  loadSprites(true);
   stage=0;kills=0;cleared=0;elapsed=0;descent=null;acquired=[];previousRelicOffer=[];lastAction="";player=makePlayer();enter("standard");
   saveExpedition();
   if(touchUI)draw();
@@ -1150,6 +1162,7 @@ function clearChamber(node){
   if(bossRoom){floor.bossDoor.locked=false;floor.viewTile=-1}
   sfx("clear",bossRoom?Math.max(0,bossDeathAudioUntil-(audio?.currentTime??0)):0);
   if(floor.cleared===floor.nodes.length){
+    if(touchUI&&stage+1<arenas.length)requestArt(arenas[stage+1],"low");
     cleared=stage+1;
     const weaponReward=stage>0&&routes[route].weaponReward;
     if(weaponReward){
@@ -1348,9 +1361,9 @@ function sprite(frame,x,y,size,face,fallback,tilt=0){
   else drawSpriteSilhouette(frame,size,fallback);
   ctx.restore();
 }
-function paintPaving(pen,map,level,img,first=0,end=MAZE_ROWS){
-  const sample=img?Math.round(img.height*.065):0;
-  for(let y=first;y<end;y++)for(let x=0;x<MAZE_COLS;x++){
+function paintPaving(pen,map,level,img,first=0,end=MAZE_ROWS,leftmost=0,rightmost=MAZE_COLS){
+  const sample=img?Math.max(1,Math.round(img.height*.065)):0;
+  for(let y=first;y<end;y++)for(let x=leftmost;x<rightmost;x++){
     const k=tileIndex(x,y);
     if(!map.cells[k])continue;
     const left=x*TILE,top=y*TILE;
@@ -1511,21 +1524,28 @@ function startExpedition(){
   }
   begin();
 }
-function drawBasicTerrain(){
+function drawBasicTerrain(img){
   ctx.fillStyle="#100d13";ctx.fillRect(camera.x-12,camera.y-12,W+24,H+24);
   const left=Math.max(0,Math.floor((camera.x-12)/TILE)), right=Math.min(MAZE_COLS,Math.ceil((camera.x+W+12)/TILE));
   const top=Math.max(0,Math.floor((camera.y-12)/TILE)), bottom=Math.min(MAZE_ROWS,Math.ceil((camera.y+H+12)/TILE));
+  try{paintPaving(ctx,floor,stage,img,top,bottom,left,right)}
+  catch{paintPaving(ctx,floor,stage,null,top,bottom,left,right)}
   for(let y=top;y<bottom;y++)for(let x=left;x<right;x++){
-    const i=tileIndex(x,y), tile=floor.cells[i], feature=floor.features[i];
-    if(!tile&&feature!==1&&feature!==2)continue;
-    ctx.fillStyle=tile?stoneColors[stage]:feature===1?"#4d3d49":"#07060a";
+    const i=tileIndex(x,y), cells=floor.cells, feature=floor.features[i];
+    if(cells[i])continue;
+    const wall=cells[i-MAZE_COLS]||cells[i+MAZE_COLS]||cells[i-1]||cells[i+1];
+    if(!wall&&feature!==1&&feature!==2)continue;
+    ctx.fillStyle=feature===1?"#4d3d49":feature===2?"#07060a":"#332b35";
     ctx.fillRect(x*TILE+1,y*TILE+1,TILE-2,TILE-2);
   }
 }
 function drawArena(){
-  const image=requestArt(arenas[stage]), img=image.complete&&image.naturalWidth?image:null;
+  const image=requestArt(arenas[stage]);
+  const entry=stage===0&&touchUI?requestArt("openingArena"):null;
+  const preview=entry?.complete&&entry.naturalWidth?entry:null;
+  const img=image.complete&&image.naturalWidth?image:preview;
   const density=touchUI?MOBILE_TERRAIN_SCALE:1;
-  if(!touchUI||image.complete)prepareScenery(floor,stage,img,density);
+  prepareScenery(floor,stage,img,density);
   if(!sceneryLost&&floor.sceneryScale===density){
     try{
       ctx.drawImage(scenery,camera.x*density,camera.y*density,W*density,H*density,camera.x,camera.y,W,H);
@@ -1534,7 +1554,7 @@ function drawArena(){
       floor.sceneryScale=0;sceneryRetryAt=Date.now()+750;
     }
   }
-  drawBasicTerrain();
+  drawBasicTerrain(preview??img);
 }
 function drawMist(){
   const color=spiritColors[stage], p=player;
@@ -2478,10 +2498,12 @@ function enableStart(){
   $("start").onclick=startExpedition;$("start").disabled=false;$("start").setAttribute("aria-busy","false");
   $("startLabel").textContent=hasStoredRun?"继续远征":"开始远征";$("startStatus").hidden=true;
   $("start").dataset.ready="true";
+  if(touchUI&&!hasStoredRun)requestArt(arenas[0],"low");
 }
 if(ctx){
   syncTouchLayout();resize();syncSound();updateBest();
   const openingImages=[requestArt("hero","high"),requestArt("openingSprites","high")];
+  if(touchUI)openingImages.push(requestArt("openingArena","high"));
   const pending=openingImages.filter(img=>!img.complete);
   if(!pending.length)enableStart();
   else{
