@@ -28,8 +28,8 @@ const EMBER_SPLASH={impact:20,damage:17,targets:3,reach:72};
 const EMBER_SLOW=2;
 const WARDEN_ATTACKS=["slam","fan","rush"];
 const WARDEN_RUSH=[
-  {trigger:320,reach:355,speed:650,damage:24,recovery:1.14},
-  {trigger:370,reach:415,speed:780,damage:28,recovery:.92}
+  {trigger:320,reach:355,speed:650,damage:26,recovery:1.14},
+  {trigger:370,reach:415,speed:840,damage:31,recovery:.92}
 ];
 const arenas = ["arena", "arena-2", "arena-3", "arena-4", "arena-5", "arena-6", "arena-7"];
 const art = {};
@@ -48,8 +48,8 @@ const beasts = {
   archer:{name:"青灯引魂者", hp:74, speed:106, r:19, size:83, color:"#73e0d6", frame:[1083,77,353,402], tell:.63, damage:10},
   brute: {name:"紫脊石像", hp:144, speed:83, r:27, size:102, color:"#cfa1fa", frame:[49,572,430,389], tell:.78, damage:18},
   eye:   {name:"蚀日之眼", hp:90, speed:122, r:18, size:78, color:"#ffae5b", frame:[575,542,330,408], tell:.71, damage:15},
-  warden:{name:"铸钟守卫", hp:1850, speed:94, r:39, size:151, color:"#d1abeb", frame:[955,513,560,461], tell:.83, damage:20, boss:true},
-  bell:  {name:"永夜钟主", hp:4850, speed:111, r:49, size:184, color:"#ffaf67", frame:[955,513,560,461], tell:.76, damage:23, boss:true}
+  warden:{name:"铸钟守卫", hp:2250, speed:94, r:39, size:151, color:"#d1abeb", frame:[955,513,560,461], tell:.83, damage:22, boss:true},
+  bell:  {name:"永夜钟主", hp:6000, speed:111, r:49, size:184, color:"#ffaf67", frame:[955,513,560,461], tell:.76, damage:26, boss:true}
 };
 
 const schools = {
@@ -706,8 +706,8 @@ function strike(e){
   }
 }
 function sigils(e){
-  const spots=[{x:e.tx,y:e.ty,r:88}];
-  if(e.phase===2)for(let i=0;i<3;i++)spots.push({...range(e.tx,e.ty,e.attackA+TAU*i/3,139),r:67});
+  const spots=[{x:e.tx,y:e.ty,r:e.phase===2?96:88}];
+  if(e.phase===2)for(let i=0;i<3;i++)spots.push({...range(e.tx,e.ty,e.attackA+TAU*i/3,139),r:75});
   return spots;
 }
 function stepEnemy(e,dt){
@@ -1750,7 +1750,7 @@ function showGuide(){
   $("dismiss").onclick=closeModal;
 }
 function records(){
-  const lore={hound:"锁定前方后会直线扑袭。看到地面红线时向侧面闪避。",archer:"喜欢保持距离。青色虚线标示它的射击方向。",brute:"沉重的双拳会震击周围，攻击前有明显蓄力。",eye:"把爆裂刻印放在你刚才的位置。走出圆环即可躲开。",warden:"轮流使用震地、环形弹幕和冲撞。冲撞前地面会亮起带箭头的红色路线，向侧面躲开后可趁它收招反击。半血召唤裂骨猎犬，冲撞也会加快。",bell:"拥有四种攻击，半血后加速攻击并召来蚀日之眼。"};
+  const lore={hound:"锁定前方后会直线扑袭。看到地面红线时向侧面闪避。",archer:"喜欢保持距离。青色虚线标示它的射击方向。",brute:"沉重的双拳会震击周围，攻击前有明显蓄力。",eye:"把爆裂刻印放在你刚才的位置。走出圆环即可躲开。",warden:"轮流使用震地、环形弹幕和冲撞。冲撞前地面会亮起带箭头的红色路线，向侧面躲开后可趁它收招反击。半血召唤裂骨猎犬，冲撞也会加快。",bell:"半血后加快出招，召来蚀日之眼，并扩大符印范围。地面红圈标出了爆炸范围。"};
   const known=Object.entries(beasts).map(([id,b])=>[save.unlocked[id]?b.name:"未遭遇",save.unlocked[id]?lore[id]:"在远征中首次遭遇后解锁"]);
   showModal(heading("远征档案",`远征 ${save.runs} 次 · 通关 ${save.wins} 次 · 最深 ${save.best} / 7 层 · 累计击败 ${save.kills}`)+grid(known)+row(btn("dismiss","返回",true)));
   $("dismiss").onclick=closeModal;
