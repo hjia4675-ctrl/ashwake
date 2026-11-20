@@ -32,9 +32,43 @@ const WARDEN_RUSH=[
   {trigger:370,reach:415,speed:780,damage:28,recovery:.92}
 ];
 const arenas = ["arena", "arena-2", "arena-3", "arena-4", "arena-5", "arena-6", "arena-7"];
-const art = Object.fromEntries([...arenas.map(name=>name+".jpg"), "sprites.png"].map(source => {
-  const img = new Image(); img.src = source; return [source.split(".")[0], img];
-}));
+const art = {};
+let spriteAtlasState="loading";
+function requestArt(name,priority="auto",retry=false){
+  if(art[name]&&!retry)return art[name];
+  const source=name==="sprites"?"sprites.png":name+".jpg";
+  const url = source;
+  const img=new Image();img.fetchPriority=priority;
+  art[name]=img;
+  img.src=retry&&!url.startsWith("data:")?url+"?retry="+Date.now():url;
+  return img;
+}
+function syncStartArtwork(){
+  $("start").disabled=spriteAtlasState==="loading";
+  $("start").setAttribute("aria-busy",String(spriteAtlasState==="loading"));
+  $("startLabel").textContent=spriteAtlasState==="ready"?"开始远征":spriteAtlasState==="error"?"重试加载":"正在加载画面…";
+  $("startStatus").hidden=spriteAtlasState!=="error";
+}
+function loadSpriteAtlas(retry=false){
+  spriteAtlasState="loading";syncStartArtwork();
+  const img=requestArt("sprites","high",retry);
+  const finish=()=>{
+    if(art.sprites!==img)return;
+    const ready=img.complete&&img.naturalWidth>0;
+    spriteAtlasState=ready?"ready":"error";syncStartArtwork();
+    if(ready)requestArt(arenas[0],"low");
+  };
+  if(typeof img.decode==="function")img.decode().then(finish,finish);
+  else if(img.complete)finish();
+  else{
+    img.addEventListener("load",finish,{once:true});
+    img.addEventListener("error",finish,{once:true});
+  }
+}
+function startFromMenu(){
+  if(spriteAtlasState==="ready")begin();
+  else if(spriteAtlasState==="error")loadSpriteAtlas(true);
+}
 
 const beasts = {
   hound: {name:"裂骨猎犬", hp:64, speed:144, r:18, size:80, color:"#f3a46e", frame:[548,92,419,367], tell:.38, damage:11},
@@ -271,6 +305,8 @@ function entrySupply(path){
 }
 function enter(name){
   route=name;
+  requestArt(arenas[stage]);
+  if(arenas[stage+1])requestArt(arenas[stage+1],"low");
   if(stage>0){
     const supply=entrySupply(name);
     player.hp=Math.min(player.maxHp,player.hp+supply.hp);
@@ -997,7 +1033,7 @@ function paintMaze(img){
   paintEntrances(pen,color);
 }
 function drawArena(){
-  const image=art[arenas[stage]], img=image.complete&&image.naturalWidth?image:null;
+  const image=requestArt(arenas[stage]), img=image.complete&&image.naturalWidth?image:null;
   if(floor.sceneryImage!==img){paintMaze(img);floor.sceneryImage=img}
   ctx.drawImage(scenery,camera.x,camera.y,W,H,camera.x,camera.y,W,H);
 }
@@ -1777,7 +1813,7 @@ window.addEventListener("blur",()=>{if(state==="fight")pause();else resetInput()
 document.addEventListener("visibilitychange",()=>{if(document.hidden&&state==="fight")pause()});
 window.addEventListener("resize",resize);
 window.addEventListener("orientationchange",resetInput);
-$("start").onclick=begin;$("guide").onclick=showGuide;$("records").onclick=records;$("sound").onclick=toggleSound;$("pause").onclick=pause;
+$("start").onclick=startFromMenu;$("guide").onclick=showGuide;$("records").onclick=records;$("sound").onclick=toggleSound;$("pause").onclick=pause;
 $("mapButton").onclick=()=>{if(state==="fight")showFloorMap()};
 $("relicButton").onclick=showRelicInventory;
 $("interact").onclick=interact;
@@ -1799,4 +1835,4 @@ function loop(ms){
   }
   requestAnimationFrame(loop);
 }
-syncTouchLayout();resize();syncSound();updateBest();requestAnimationFrame(loop);
+syncTouchLayout();resize();syncSound();updateBest();loadSpriteAtlas();requestAnimationFrame(loop);
