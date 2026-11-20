@@ -189,7 +189,7 @@ let fieldLost=false, nextMobileDraw=0, mobileTime=0, slowMobile=false, cadenceFr
 const MOBILE_STEP=1/60, MOBILE_TERRAIN_SCALE=.5, MOBILE_DRAW_INTERVAL=1000/60;
 let relicInventoryReturn="fight";
 let player, stage=0, route="standard", kills=0, cleared=0, elapsed=0, acquired=[], foes=[], shots=[], orbs=[], debris=[], fx=[], floats=[], spawns=[], scene=0, bannerTimer=0, shake=0, hitStop=0, flash=0;
-let floor, chamber, nearby, descent, pulse=null, nextPulse=0, pulseIndex=0;
+let floor, chamber, nearby, descent, pincer=null, pulse=null, nextPulse=0, pulseIndex=0;
 const camera={x:0,y:0};
 const keys=new Set(), pointer={x:560,y:315,down:false,id:null}, stick={x:0,y:0,id:null}, actions=new Set();
 const controlPointers=new Map(), touchCasts=new Map();
@@ -283,6 +283,7 @@ function restoreExpedition(){
   ({stage,route,kills,cleared,elapsed,scene,player,floor,chamber,descent,pulse,nextPulse,pulseIndex,acquired,previousRelicOffer,
     foes,shots,spawns,orbs,weaponBolts,weaponFields,hitStop}=run);
   lastRunSave=elapsed;
+  pincer=null;
   lastAction="";last=mobileTime=nextMobileDraw=hudTime=0;
   resetInput();player.moveVX=player.moveVY=0;player.moving=false;
   debris=[];fx=[];floats=[];weaponTraces=[];bannerTimer=shake=flash=0;$("banner").classList.remove("show");
@@ -408,7 +409,7 @@ function enter(name){
     player.ash=Math.min(100,player.ash+supply.ash);
   }
   floor=buildFloor();invalidateScenery();
-  chamber=null;nearby=null;
+  chamber=null;nearby=null;pincer=null;
   state="fight";scene=0;closeModal();resetInput();
   foes=[];shots=[];orbs=[];spawns=[];debris=[];fx=[];floats=[];weaponBolts=[];weaponFields=[];weaponTraces=[];flash=0;shake=0;hitStop=0;
   const origin=floor.nodes[0];
@@ -796,6 +797,86 @@ function predictRunner(p,room,seconds,maxLead){
   }
   return {x:p.x+p.moveVX*travelTime,y:p.y+p.moveVY*travelTime};
 }
+function updatePincer(){
+  const p=player;
+  if(!chamber||chamber.done||floor.bossDoor&&floor.nodes[1]===chamber){pincer=null;return}
+  if(pincer?.room!==chamber)pincer={room:chamber,x:p.x,y:p.y,at:scene,sweep:0,curve:0,turns:0,planAt:0,guards:new Map()};
+  const plan=pincer, elapsed=scene-plan.at;
+  if(elapsed<.15)return;
+  const dx=p.x-plan.x, dy=p.y-plan.y, heading=Math.atan2(dy,dx);
+  const bend=plan.heading===undefined?0:turn(heading-plan.heading);
+  Object.assign(plan,{x:p.x,y:p.y,at:scene,heading});
+
+  if(Math.hypot(dx,dy)<105*elapsed||Math.abs(bend)>2){
+    plan.heading=undefined;plan.sweep=plan.curve=plan.turns=0;
+  }else if(Math.abs(bend)>.07){
+    const sameTurn=bend*plan.curve>=0;
+    plan.turns=sameTurn?plan.turns+1:1;
+    plan.sweep=Math.min(1.5,(sameTurn?plan.sweep:0)+Math.abs(bend));
+    plan.curve=clamp(bend/elapsed,-2.65,2.65);
+  }else{
+    plan.sweep=Math.max(0,plan.sweep-.12);
+    if(!plan.sweep)plan.turns=0;
+  }
+
+  if(plan.sweep<.57||plan.turns<2){plan.active=false;plan.guards.clear();plan.planAt=0;return}
+  if(scene<plan.planAt)return;
+  plan.planAt=scene+.72;
+  const pack=foes.filter(e=>e.homeRoom===chamber&&e.hp>0&&!e.boss&&!e.anchored&&dist(e,p)<540);
+  plan.active=pack.length>=2;plan.guards.clear();
+  if(!plan.active)return;
+
+  const melee=pack.filter(e=>e.id==="hound"||e.id==="brute").sort((a,b)=>dist(a,p)-dist(b,p));
+  if(melee.length>1)melee.shift(); // Keep the nearest melee enemy chasing.
+  const positions=[];
+  for(const lead of (pack.length>=5?[.82,1.28]:[.82])){
+    let winner=null;
+    for(const e of melee){
+      if(plan.guards.has(e))continue;
+      const target=pincerPoint(lead,e.r,point=>positions.every(other=>dist(other,point)>=62));
+      if(!target)continue;
+      const steps=dist(e,target)/beasts[e.id].speed;
+      if(!winner||steps<winner.steps)winner={e,target,steps};
+    }
+    if(winner){
+      const {e,target}=winner;
+      plan.guards.set(e,{target,field:null});positions.push(target);
+    }
+  }
+}
+function pincerPoint(seconds,r,accept){
+  const p=player, speed=Math.hypot(p.moveVX,p.moveVY);
+  if(speed<60)return null;
+  const heading=Math.atan2(p.moveVY,p.moveVX);
+  for(const lead of [1,.76,.54]){
+    const travel=Math.min(seconds*lead,315/speed), bend=clamp(pincer.curve*travel,-1.6,1.6);
+    const stride=speed*travel*(Math.abs(bend)>.01?Math.sin(bend/2)/(bend/2):1);
+    const point=range(p.x,p.y,heading+bend/2,stride);
+    if(floor.owners[tileAt(point.x,point.y)]===pincer.room.number&&standOn(floor,point.x,point.y,r)&&accept(point))return point;
+  }
+  return null;
+}
+function pincerGuardStep(e,guard){
+  const {target}=guard;
+  const steps=Math.ceil(dist(e,target)/(TILE/4));
+  let clear=true;
+  for(let i=1;i<=steps;i++){
+    const fraction=i/steps;
+    if(!standOn(floor,e.x+(target.x-e.x)*fraction,e.y+(target.y-e.y)*fraction,e.r)){clear=false;break}
+  }
+  if(clear)return target;
+  const room=pincer.room.number;
+  const field=guard.field??(guard.field=mapDistances(floor,tileAt(target.x,target.y),
+    (k,x,y)=>floor.owners[k]===room&&standOn(floor,(x+.5)*TILE,(y+.5)*TILE,e.r)));
+  const x=Math.floor(e.x/TILE),y=Math.floor(e.y/TILE);
+  let best=field[tileIndex(x,y)], next=null;
+  for(const [dx,dy] of tileDirections){
+    const nx=x+dx,ny=y+dy, mark=field[tileIndex(nx,ny)];
+    if(mark<0||best>=0&&mark>=best)continue;
+    next={x:(nx+.5)*TILE,y:(ny+.5)*TILE};best=mark;
+  }
+  return next;
+}
 function beginTell(e,p,bossAttack){
   const d=beasts[e.id], windup=e.boss?(e.phase===2?(e.id==="bell"?.75:.79):1):(routes[route].enemyWindup??1);
   e.attackA=angle(e,p);e.tx=p.x;e.ty=p.y;
@@ -805,6 +886,14 @@ function beginTell(e,p,bossAttack){
   e.cycle++;
   const rush=e.pattern==="rush"?(e.id==="warden"?WARDEN_RUSH:BELL_RUSH)[e.phase-1]:null;
   e.full=rush?.tell??d.tell*windup;e.tell=e.full;
+  if(pincer?.active&&e.homeRoom===pincer.room&&!e.boss&&!e.anchored){
+    const archer=e.id==="archer", eye=e.id==="eye";
+    if(archer||eye||e.id==="hound"&&pincer.guards.has(e)){
+      const lead=e.full+(archer?Math.min(dist(e,p),290)/(e.elite?340:280):0);
+      const target=pincerPoint(lead,0,point=>(archer||eye||dist(e,point)<123)&&floorSight(floor,e,point));
+      if(target){e.attackA=angle(e,target);e.tx=target.x;e.ty=target.y}
+    }
+  }
   if(rush)prepareBossRush(e,p,rush);
   if(e.pattern==="sigil")e.marks=prepareBellSigils(e,p);
   if(e.anchored){
@@ -979,16 +1068,18 @@ function stepEnemy(e,dt){
     return;
   }
   const ranged=e.id==="archer"||e.id==="eye";
+  const guard=pincer?.active?pincer.guards.get(e):null;
   const desired=e.id==="archer"?264:e.id==="eye"?203:e.boss?105:e.id==="brute"?85:83;
   const bossAttack=e.boss?(e.id==="warden"?nextWardenAttack(e,distance):nextBellAttack(e,distance)):null;
   const reach=bossAttack?bossAttackReach(e,bossAttack):ranged?460:desired+15;
   if(sight&&e.cd<=0&&distance<reach&&(!e.boss||!foes.some(other=>other.hp>0&&other.anchored&&other.homeRoom===e.homeRoom&&other.tell>0))){
     beginTell(e,p,bossAttack);return;
   }
-  const moving=!sight||distance>desired?1:ranged&&distance<desired-65?-.71:0;
+  const intercept=guard?pincerGuardStep(e,guard):null;
+  const moving=intercept?(dist(e,intercept)>10?1:0):!sight||distance>desired?1:ranged&&distance<desired-65?-.71:0;
   const speed=d.speed*(e.elite?ELITE_SPEED:1)*(e.phase===2?1.23:1)*(e.slow>0?(e.boss?.88:.7):1);
-  let direction=a;
-  if(!sight){
+  let direction=intercept?angle(e,intercept):a;
+  if(!sight&&!intercept){
     const x=Math.floor(e.x/TILE),y=Math.floor(e.y/TILE);
     const field=floor.field??(floor.field=mapDistances(floor,tileAt(p.x,p.y)));
     let best=field[tileIndex(x,y)], step=null;
@@ -999,7 +1090,8 @@ function stepEnemy(e,dt){
     if(!step)return;
     direction=angle(e,step);
   }
-  walkBody(floor,e,Math.cos(direction)*speed*dt*moving,Math.sin(direction)*speed*dt*moving);
+  const stride=speed*dt*moving*(intercept?1.15:1);
+  walkBody(floor,e,Math.cos(direction)*stride,Math.sin(direction)*stride);
   for(const other of foes){
     if(other===e||other.hp<=0)continue;
     const dx=e.x-other.x,dy=e.y-other.y,gapSquared=dx*dx+dy*dy,limit=(e.r+other.r)*.88;
@@ -1126,6 +1218,7 @@ function tick(dt){
   stepWeaponCombat(dt);
   for(const orb of orbs)moveOrb(orb,dt);
   orbs=orbs.filter(orb=>orb.left>0);
+  updatePincer();
   for(const e of foes)if(e.hp>0)stepEnemy(e,dt);
   for(const s of shots){
     const end=range(s.x,s.y,s.a,s.speed*dt);

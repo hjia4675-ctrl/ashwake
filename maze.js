@@ -169,7 +169,7 @@ function floorSight(map,a,b){
   }
   return true;
 }
-function mapDistances(map,origin){
+function mapDistances(map,origin,canEnter){
   const result=new Int16Array(map.cells.length).fill(-1);
   const queue=new Int16Array(result.length);
   let size=1;
@@ -179,7 +179,7 @@ function mapDistances(map,origin){
     for(const [dx,dy] of tileDirections){
       const nx=x+dx,ny=y+dy;
       const n=tileIndex(nx,ny);
-      if(result[n]>=0||!openTile(map,nx,ny))continue;
+      if(result[n]>=0||!openTile(map,nx,ny)||canEnter&&!canEnter(n,nx,ny))continue;
       result[n]=result[k]+1;queue[size++]=n;
     }
   }
