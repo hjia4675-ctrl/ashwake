@@ -1,7 +1,7 @@
 "use strict";
 
 const $ = id => document.getElementById(id);
-const canvas = $("field"), ctx = canvas.getContext("2d");
+const canvas = $("field"), ctx = canvas.getContext("2d",{alpha:false});
 const PI = Math.PI, TAU = PI * 2;
 const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 const between = (min, max) => min + Math.random() * (max - min);
@@ -176,6 +176,8 @@ function sfx(name,after=0){
 }
 
 let state="home", W=1120,H=630, scale=1, dpr=1, ox=0, oy=0, last=0, visualTime=0, hudTime=0;
+let fieldLost=false, nextMobileDraw=0;
+const MOBILE_PIXELS=800000, MOBILE_TERRAIN_SCALE=.5, MOBILE_DRAW_INTERVAL=1000/60;
 let relicInventoryReturn="fight";
 let player, stage=0, route="standard", kills=0, cleared=0, elapsed=0, acquired=[], foes=[], shots=[], orbs=[], debris=[], fx=[], floats=[], spawns=[], scene=0, bannerTimer=0, shake=0, hitStop=0, flash=0;
 let floor, chamber, nearby, descent, pulse=null, nextPulse=0, pulseIndex=0;
@@ -200,7 +202,11 @@ function resize(){
   }else{
     H=ratio<1?820:630;W=clamp(Math.round(H*ratio),480,1350);
   }
-  dpr=Math.min(2,devicePixelRatio||1);canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);
+  const limit=touchUI?Math.min(1.4,Math.sqrt(MOBILE_PIXELS/(width*height))):2;
+  dpr=Math.min(limit,devicePixelRatio||1);
+  const pixelsWide=Math.max(1,Math.floor(width*dpr)), pixelsHigh=Math.max(1,Math.floor(height*dpr));
+  if(canvas.width!==pixelsWide)canvas.width=pixelsWide;
+  if(canvas.height!==pixelsHigh)canvas.height=pixelsHigh;
   scale=Math.min(width/W,height/H);ox=(width-W*scale)*.5;oy=(height-H*scale)*.5;
   if(player&&state!=="home"){followCamera();draw()}
 }
@@ -278,13 +284,15 @@ function entrySupply(path){
 }
 function enter(name){
   route=name;
-  requestArt(arenas[stage]);
+  const arena=arenas[stage];
+  if(touchUI)for(const name of arenas)if(name!==arena)delete art[name];
+  requestArt(arena);
   if(stage>0){
     const supply=entrySupply(name);
     player.hp=Math.min(player.maxHp,player.hp+supply.hp);
     player.ash=Math.min(100,player.ash+supply.ash);
   }
-  floor=buildFloor();chamber=null;nearby=null;
+  floor=buildFloor();sceneryRetryAt=0;chamber=null;nearby=null;
   state="fight";scene=0;closeModal();resetInput();
   foes=[];shots=[];orbs=[];spawns=[];debris=[];fx=[];floats=[];weaponBolts=[];weaponFields=[];weaponTraces=[];flash=0;shake=0;hitStop=0;
   const origin=floor.nodes[0];
@@ -333,13 +341,13 @@ function discover(){
     bossDoor.locked=true;floor.viewTile=-1;shake=Math.max(shake,5);sfx("seal");
   }
   if(k!==floor.viewTile){
-    floor.viewTile=k;floor.field=mapDistances(floor,k);
+    floor.viewTile=k;floor.field=null;
     for(let dy=-4;dy<=4;dy++)for(let dx=-4;dx<=4;dx++){
       const x=tx+dx,y=ty+dy;
       if(x<0||y<0||x>=MAZE_COLS||y>=MAZE_ROWS||dx*dx+dy*dy>18)continue;
       const at=tileIndex(x,y);
-      const reachable=floorSight(floor,player,{x:(x+.5)*TILE,y:(y+.5)*TILE});
-      if(floor.cells[at]&&(reachable||floor.seals[at]&&dx*dx+dy*dy<=4))floor.seen[at]=1;
+      if(!floor.cells[at]||floor.seen[at])continue;
+      if(floor.seals[at]&&dx*dx+dy*dy<=4||floorSight(floor,player,{x:(x+.5)*TILE,y:(y+.5)*TILE}))floor.seen[at]=1;
     }
   }
   if(node===chamber)return;
@@ -357,7 +365,15 @@ function begin(){
   stage=0;kills=0;cleared=0;elapsed=0;acquired=[];previousRelicOffer=[];lastAction="";player=makePlayer();enter("standard");
   $("pause").focus({preventScroll:true});$("pause").blur();
 }
-function home(){state="home";resetInput();closeModal();$("game").hidden=true;$("home").hidden=false;updateBest();$("start").focus()}
+function home(){
+  state="home";resetInput();closeModal();$("game").hidden=true;$("home").hidden=false;
+  if(touchUI){
+    canvas.width=canvas.height=scenery.width=scenery.height=1;
+    if(floor){floor.sceneryImage=null;invalidateScenery()}
+    for(const arena of arenas)delete art[arena];
+  }
+  updateBest();$("start").focus();
+}
 function announce(title, note, time){
   const el=$("banner");el.replaceChildren(document.createTextNode(title));
   if(note){const small=document.createElement("small");small.textContent=note;el.append(small)}
@@ -369,6 +385,7 @@ function ash(n){
   player.ash=clamp(Math.round(total*1e6)/1e6,0,100);
 }
 function sparks(x,y,color,count=12,speed=165,a=null){
+  if(touchUI)count=Math.min(Math.ceil(count*.55),128-debris.length);
   for(let i=0;i<count;i++){
     const direction=a===null?between(0,TAU):a+between(-.8,.8), v=between(35,speed), life=between(.16,.51);
     debris.push({x,y,vx:Math.cos(direction)*v,vy:Math.sin(direction)*v,color,r:between(1,3),life,max:life});
@@ -722,9 +739,10 @@ function stepEnemy(e,dt){
   let direction=a;
   if(!sight){
     const x=Math.floor(e.x/TILE),y=Math.floor(e.y/TILE);
-    let best=floor.field[tileIndex(x,y)], step=null;
-    for(const [nx,ny] of [[x-1,y],[x+1,y],[x,y-1],[x,y+1]]){
-      const mark=floor.field[tileIndex(nx,ny)];
+    const field=floor.field??(floor.field=mapDistances(floor,tileAt(p.x,p.y)));
+    let best=field[tileIndex(x,y)], step=null;
+    for(const [dx,dy] of tileDirections){
+      const nx=x+dx, ny=y+dy, mark=field[tileIndex(nx,ny)];
       if(mark>=0&&(best<0||mark<best)){best=mark;step={x:(nx+.5)*TILE,y:(ny+.5)*TILE}}
     }
     if(!step)return;
@@ -886,7 +904,11 @@ const spriteSilhouettes=new Map([
 ]);
 const scenery=document.createElement("canvas");
 const roomMural=document.createElement("canvas");
+let sceneryRetryAt=0, sceneryLost=false;
 const stoneColors=["#30272c","#28313e","#29382f","#3a2a2a","#35404c","#352b43","#392730"];
+function inView(x,y,margin=128){
+  return x>=camera.x-margin&&x<=camera.x+W+margin&&y>=camera.y-margin&&y<=camera.y+H+margin;
+}
 function oval(x,y,rx,ry,color){ctx.fillStyle=color;ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,TAU);ctx.fill()}
 function circle(x,y,r,color,width=1){ctx.beginPath();ctx.arc(x,y,r,0,TAU);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke()}
 function glow(x,y,r,color){const g=ctx.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,color);g.addColorStop(1,"transparent");ctx.fillStyle=g;ctx.fillRect(x-r,y-r,r*2,r*2)}
@@ -945,12 +967,14 @@ function paintPaving(pen,img){
     pen.fillStyle="#e0c0ae15";pen.fillRect(left+1,top+1,TILE-1,1);
   }
 }
-function blendRoomArt(pen,img){
+function blendRoomArt(pen,img,density){
   if(!img)return;
   for(const node of floor.nodes){
     const x=node.left*TILE,y=node.top*TILE,w=(node.right-node.left)*TILE,h=(node.bottom-node.top)*TILE;
-    roomMural.width=w;roomMural.height=h;
+    roomMural.width=Math.ceil(w*density);roomMural.height=Math.ceil(h*density);
     const ink=roomMural.getContext("2d");
+    if(!ink||ink.isContextLost?.())break;
+    ink.setTransform(density,0,0,density,0,0);
     const [u,v,du,dv]=roomForms[node.form].crop;
     ink.drawImage(img,img.width*u,img.height*v,img.width*du,img.height*dv,0,0,w,h);
     ink.save();
@@ -964,8 +988,9 @@ function blendRoomArt(pen,img){
     for(let ty=node.top;ty<node.bottom;ty++)for(let tx=node.left;tx<node.right;tx++){
       if(floor.owners[tileIndex(tx,ty)]===node.number)pen.rect(tx*TILE,ty*TILE,TILE,TILE);
     }
-    pen.clip();pen.drawImage(roomMural,x,y);pen.restore();
+    pen.clip();pen.drawImage(roomMural,x,y,w,h);pen.restore();
   }
+  if(touchUI){roomMural.width=1;roomMural.height=1}
 }
 function paintMasonry(pen,color){
   for(let y=1;y<MAZE_ROWS-1;y++)for(let x=1;x<MAZE_COLS-1;x++){
@@ -1028,28 +1053,68 @@ function paintEntrances(pen,color){
     pen.restore();
   }
 }
-function paintMaze(img){
-  scenery.width=WORLD_W;scenery.height=WORLD_H;
-  const pen=scenery.getContext("2d"), color=spiritColors[stage];
+function invalidateScenery(){
+  if(floor)floor.sceneryScale=0;
+  sceneryRetryAt=0;
+}
+function paintMaze(img,density){
+  const width=WORLD_W*density,height=WORLD_H*density;
+  if(scenery.width!==width)scenery.width=width;
+  if(scenery.height!==height)scenery.height=height;
+  const pen=scenery.getContext("2d",{alpha:false}), color=spiritColors[stage];
+  if(!pen||pen.isContextLost?.())return false;
+  pen.setTransform(density,0,0,density,0,0);
   pen.fillStyle="#100d13";pen.fillRect(0,0,WORLD_W,WORLD_H);
   paintPaving(pen,img);
-  blendRoomArt(pen,img);
+  blendRoomArt(pen,img,density);
   paintMasonry(pen,color);
   paintRoomFeatures(pen,floor,stage,color);
   paintEntrances(pen,color);
+  return !pen.isContextLost?.();
+}
+function drawBasicTerrain(){
+  ctx.fillStyle="#100d13";ctx.fillRect(camera.x-12,camera.y-12,W+24,H+24);
+  const left=Math.max(0,Math.floor((camera.x-12)/TILE)), right=Math.min(MAZE_COLS,Math.ceil((camera.x+W+12)/TILE));
+  const top=Math.max(0,Math.floor((camera.y-12)/TILE)), bottom=Math.min(MAZE_ROWS,Math.ceil((camera.y+H+12)/TILE));
+  for(let y=top;y<bottom;y++)for(let x=left;x<right;x++){
+    const i=tileIndex(x,y), tile=floor.cells[i], feature=floor.features[i];
+    if(!tile&&feature!==1&&feature!==2)continue;
+    ctx.fillStyle=tile?stoneColors[stage]:feature===1?"#4d3d49":"#07060a";
+    ctx.fillRect(x*TILE+1,y*TILE+1,TILE-2,TILE-2);
+  }
 }
 function drawArena(){
   const image=requestArt(arenas[stage]), img=image.complete&&image.naturalWidth?image:null;
-  if(floor.sceneryImage!==img){paintMaze(img);floor.sceneryImage=img}
-  ctx.drawImage(scenery,camera.x,camera.y,W,H,camera.x,camera.y,W,H);
+  const density=touchUI?MOBILE_TERRAIN_SCALE:1;
+  if(!sceneryLost&&(floor.sceneryImage!==img||floor.sceneryScale!==density)&&Date.now()>=sceneryRetryAt){
+    try{
+      if(paintMaze(img,density)){floor.sceneryImage=img;floor.sceneryScale=density}
+      else floor.sceneryScale=0;
+    }catch{
+      floor.sceneryScale=0;
+    }
+    sceneryRetryAt=floor.sceneryScale?0:Date.now()+750;
+  }
+  if(!sceneryLost&&floor.sceneryScale===density){
+    try{
+      ctx.drawImage(scenery,camera.x*density,camera.y*density,W*density,H*density,camera.x,camera.y,W,H);
+      return;
+    }catch{
+      floor.sceneryScale=0;sceneryRetryAt=Date.now()+750;
+    }
+  }
+  drawBasicTerrain();
 }
 function drawMist(){
   const color=spiritColors[stage], p=player;
-  const vignette=ctx.createRadialGradient(p.x,p.y,105,p.x,p.y,Math.max(W,H)*.59);
-  vignette.addColorStop(0,"#100b1400");vignette.addColorStop(.62,"#130d1873");vignette.addColorStop(1,"#100c14ef");
-  ctx.fillStyle=vignette;ctx.fillRect(camera.x,camera.y,W,H);
+  if(!touchUI){
+    const vignette=ctx.createRadialGradient(p.x,p.y,105,p.x,p.y,Math.max(W,H)*.59);
+    vignette.addColorStop(0,"#100b1400");vignette.addColorStop(.62,"#130d1873");vignette.addColorStop(1,"#100c14ef");
+    ctx.fillStyle=vignette;ctx.fillRect(camera.x,camera.y,W,H);
+  }
   const falling=stage===4, slow=stage===1||stage===2||stage===5;
-  for(const m of motes){
+  for(let i=0;i<(touchUI?18:motes.length);i++){
+    const m=motes[i];
     const x=camera.x+m.x*W+Math.sin(visualTime*(slow?.42:1)+m.phase)*(falling?33:14);
     const y=camera.y+(H+m.y*H+visualTime*m.speed*(falling?.64:slow?-.28:-1)%H)%H;
     ctx.globalAlpha=m.a*(falling?.93:(.65+.35*Math.sin(visualTime*2+m.phase)));
@@ -1107,16 +1172,18 @@ function drawMob(e){
   }
   const bob=Math.sin(visualTime*(e.tell>0?13:5)+e.seed)*(airborne?5:1.7);
   oval(e.x,e.y+3,e.r*1.26,e.r*.52,"#070509bc");
-  const intensity=e.tell>0?.15:e.boss?.105:.065;
-  glow(e.x,e.y-14,e.r*2.6,e.color+Math.round(intensity*255).toString(16).padStart(2,"0"));
+  if(!touchUI||e.tell>0||e.boss)glow(e.x,e.y-14,e.r*2.6,e.color+(e.tell>0?"26":e.boss?"1b":"11"));
   if(e.elite)circle(e.x,e.y,e.r+7,"#ff704eac",1.5);
   if(e.boss)circle(e.x,e.y,e.r+7,e.color+"9c",2);
-  if(e.flash>0)ctx.filter="brightness(1.9)";
-  else if(e.id==="warden")ctx.filter="hue-rotate(238deg) saturate(.75)";
-  else if(e.boss&&e.phase===2)ctx.filter="saturate(1.7) brightness(1.15)";
+  if(!touchUI){
+    if(e.flash>0)ctx.filter="brightness(1.9)";
+    else if(e.id==="warden")ctx.filter="hue-rotate(238deg) saturate(.75)";
+    else if(e.boss&&e.phase===2)ctx.filter="saturate(1.7) brightness(1.15)";
+  }
   const tilt=rushing?e.rush.ux*.14:e.tell>0?Math.sin(visualTime*25)*.024:0;
   sprite(d.frame,e.x,e.y+bob,size,e.face,e.color,tilt);
-  ctx.filter="none";
+  if(!touchUI)ctx.filter="none";
+  else if(e.flash>0)circle(e.x,e.y-8,e.r+5,"#ffddb2b4",2);
   if(e.burn>0)oval(e.x+e.r*.55,e.y-size*.6,3,3,"#ffa254");
   if(!e.boss&&e.hp<e.maxHp){
     const w=e.r*1.75, y=e.y-size*.85-6;
@@ -1157,6 +1224,7 @@ function drawSlash(f){
 }
 function drawEffects(){
   for(const orb of orbs){
+    if(touchUI&&!inView(orb.x,orb.y,48))continue;
     const outer=Math.abs(orb.side)>=2, radius=outer?7.5:orb.side?9:10.5;
     const tail=range(orb.x,orb.y,orb.a+PI,outer?30:36);
     glow(orb.x,orb.y-8,outer?24:28,outer?"#ffa84f80":"#ff733a80");
@@ -1166,9 +1234,11 @@ function drawEffects(){
     circle(orb.x,orb.y-8,radius,"#ffc782",1.3);
   }
   for(const s of shots){
+    if(touchUI&&!inView(s.x,s.y,36))continue;
     const tail=range(s.x,s.y,s.a+PI,19);glow(s.x,s.y,19,s.color+"57");line(s.x,s.y,tail.x,tail.y,s.color,2.6);oval(s.x,s.y,s.r*.63,s.r*.63,"#fff3ce");
   }
   for(const f of fx){
+    if(touchUI&&!inView(f.x,f.y,Math.max(100,(f.r??0)*1.25)))continue;
     const life=clamp(f.life/f.max,0,1);ctx.globalAlpha=life;
     if(f.type==="slash")drawSlash(f);
     if(f.type==="ghost"){ctx.globalAlpha=life*.15;equippedHero({x:f.x,a:f.a,weapons:[f.id],weaponSlot:0,dash:1},f.y,Math.cos(f.a)>.07?-1:1,0)}
@@ -1179,10 +1249,10 @@ function drawEffects(){
   }
   ctx.globalAlpha=1;
   ctx.globalCompositeOperation="lighter";
-  for(const d of debris){ctx.globalAlpha=clamp(d.life/d.max,0,1);line(d.x,d.y,d.x-d.vx*.027,d.y-d.vy*.027,d.color,d.r)}
+  for(const d of debris)if(!touchUI||inView(d.x,d.y,16)){ctx.globalAlpha=clamp(d.life/d.max,0,1);line(d.x,d.y,d.x-d.vx*.027,d.y-d.vy*.027,d.color,d.r)}
   ctx.globalCompositeOperation="source-over";
   ctx.textAlign="center";ctx.font="700 19px system-ui";
-  for(const f of floats){ctx.globalAlpha=clamp(f.life*3,0,1);ctx.lineWidth=4;ctx.strokeStyle="#110910de";ctx.strokeText(f.text,f.x,f.y);ctx.fillStyle=f.color;ctx.fillText(f.text,f.x,f.y)}
+  for(const f of floats)if(!touchUI||inView(f.x,f.y,40)){ctx.globalAlpha=clamp(f.life*3,0,1);ctx.lineWidth=4;ctx.strokeStyle="#110910de";ctx.strokeText(f.text,f.x,f.y);ctx.fillStyle=f.color;ctx.fillText(f.text,f.x,f.y)}
   ctx.globalAlpha=1;
 }
 function drawChamber(){
@@ -1280,6 +1350,7 @@ function drawTouchAim(){
   ctx.restore();
 }
 function draw(){
+  if(fieldLost||!ctx||ctx.isContextLost?.())return;
   ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle="#0d0a10";ctx.fillRect(0,0,canvas.width/dpr,canvas.height/dpr);ctx.translate(ox,oy);ctx.scale(scale,scale);
   ctx.save();ctx.beginPath();ctx.rect(0,0,W,H);ctx.clip();
   if(!smallMotion&&shake>0)ctx.translate(between(-shake,shake)*.63,between(-shake,shake)*.63);
@@ -1293,7 +1364,7 @@ function draw(){
     const f=clamp(1-(s.at-scene)/.7,0,1), c=beasts[s.id].color;
     glow(s.x,s.y,44+22*f,c+"47");circle(s.x,s.y,33*(1-f)+10,c,2);circle(s.x,s.y,16+25*f,c+"7f",1.5);
   }
-  const visible=foes.filter(e=>e.x>camera.x-175&&e.x<camera.x+W+175&&e.y>camera.y-175&&e.y<camera.y+H+175);
+  const visible=foes.filter(e=>inView(e.x,e.y,175));
   for(const e of visible)drawTell(e);
   drawTouchAim();
   const entities=[...visible,player].sort((a,b)=>a.y-b.y);
@@ -1385,32 +1456,30 @@ function cards(list,kind="",disabled=false){
     return `<button class="card" data-pick="${i}" data-school="${item.school}"${disabled?" disabled":""}><span class="icon" aria-hidden="true">${item.icon}</span><kbd>${(i+1)%10}</kbd><span class="school">${school}</span><b>${item.name}</b><small>${item.text}</small></button>`;
   }).join("")}</div>`;
 }
-function drawFloorPlan(){
-  const map=$("mapWires"), pen=map.getContext("2d");
-  const w=map.width/MAZE_COLS,h=map.height/MAZE_ROWS;
+function floorPlanMarkup(){
+  const tiles=new Map(), markers=[];
   for(let y=0;y<MAZE_ROWS;y++)for(let x=0;x<MAZE_COLS;x++){
     const k=tileIndex(x,y);
     if(!floor.seen[k])continue;
     const owner=floor.nodes[floor.owners[k]];
-    pen.fillStyle=floor.seals[k]&&!openTile(floor,x,y)?"#a34c48":owner?.done?"#9e7968":owner?"#5b4256":"#77545e";
-    pen.fillRect(x*w,y*h,Math.ceil(w),Math.ceil(h));
+    const color=floor.seals[k]&&!openTile(floor,x,y)?"#a34c48":owner?.done?"#9e7968":owner?"#5b4256":"#77545e";
+    tiles.set(color,(tiles.get(color)??"")+`M${x} ${y}h1v1h-1z`);
   }
-  const drops=[...floor.loot,...floor.armories];
-  for(const item of drops){
+  const square=(x,y,size,color)=>`<rect x="${x/TILE-size/2}" y="${y/TILE-size/2}" width="${size}" height="${size}" fill="${color}"/>`;
+  for(const item of [...floor.loot,...floor.armories]){
     if(!floor.seen[tileAt(item.x,item.y)]||player.weapons.includes(item.id))continue;
-    pen.fillStyle=item.id?weaponBook[item.id].color:"#ffe3a7";
-    const x=item.x/TILE*w,y=item.y/TILE*h;pen.fillRect(x-2,y-2,4,4);
+    markers.push(square(item.x,item.y,.4,item.id?weaponBook[item.id].color:"#ffe3a7"));
   }
   if(floor.tribute){
     const {x,y}=floor.tribute;
-    pen.fillStyle=routes.elite.color;pen.fillRect(x/TILE*w-3,y/TILE*h-3,6,6);
+    markers.push(square(x,y,.55,routes.elite.color));
   }
   const shop=floor.merchant;
   if(shop?.node.visited&&!shop.sold){
-    const x=shop.x/TILE*w, y=shop.y/TILE*h;
-    pen.fillStyle=merchantColor;pen.beginPath();pen.moveTo(x,y-6);pen.lineTo(x+6,y);pen.lineTo(x,y+6);pen.lineTo(x-6,y);pen.closePath();pen.fill();
+    markers.push(`<path d="M0 -.55 .55 0 0 .55 -.55 0Z" transform="translate(${shop.x/TILE} ${shop.y/TILE})" fill="${merchantColor}"/>`);
   }
-  pen.beginPath();pen.arc(player.x/TILE*w,player.y/TILE*h,6,0,TAU);pen.fillStyle="#ffe5a0";pen.fill();
+  markers.push(`<circle cx="${player.x/TILE}" cy="${player.y/TILE}" r=".56" fill="#ffe5a0"/>`);
+  return `<svg class="map-wires" viewBox="0 0 ${MAZE_COLS} ${MAZE_ROWS}" preserveAspectRatio="none" aria-hidden="true"><g shape-rendering="crispEdges">${[...tiles].map(([color,path])=>`<path fill="${color}" d="${path}"/>`).join("")}</g>${markers.join("")}</svg>`;
 }
 function showFloorMap(){
   state="map-preview";resetInput();
@@ -1418,14 +1487,14 @@ function showFloorMap(){
     const detail=chambers[node.kind];
     return `<span class="map-node ${node===chamber?"current":""}" style="--map-x:${node.x/WORLD_W*100}%;--map-y:${(node.y-68)/WORLD_H*100}%;--map-color:${detail.color}">${detail.icon} ${chamberName(node)}${node.done?" ✓":""}${node.cache&&node.done&&!node.claimed?" ✚":""}</span>`;
   }).join("");
-  const map=`<div class="floor-map"><canvas id="mapWires" width="640" height="520" aria-hidden="true"></canvas>${nodes}</div>`;
+  const map=`<div class="floor-map">${floorPlanMarkup()}${nodes}</div>`;
   const trapStatus=floor.safe?"陷阱无伤，密道已开":"可关闭陷阱对你的伤害";
   const shop=floor.merchant;
   const shopNote=shop?.node.visited&&!shop.sold?`<span class="merchant-marker">◆ 收钟人 · ${MERCHANT_PRICE} 余烬</span>`:"";
   const switches=`<div class="map-status"><span class="${floor.safe?"on":""}">止火阀 · ${trapStatus}</span><span class="${floor.hostile?"on":""}">逆流钟 · ${floor.hostile?"机关可伤敌":"可让机关伤敌"}</span>${floor.tribute?'<span class="on">红色方点 · 赤咒馈赠</span>':""}${shopNote}</div>`;
   const status=floor.bossDoor?.locked?"首领房已封闭":floor.cleared>=floor.nodes.length-1?"出口封印已开":"出口封印未开";
   showModal(heading(rooms[stage][0],`已肃清 ${floor.cleared} / ${floor.nodes.length} 间 · ${status} · 金圆点是你，彩色方点是武器`)+switches+map+row(btn("closeFloorMap","继续探索",true)));
-  drawFloorPlan();$("closeFloorMap").onclick=closeFloorMap;
+  $("closeFloorMap").onclick=closeFloorMap;
 }
 function closeFloorMap(){
   if(state!=="map-preview")return;
@@ -1847,30 +1916,49 @@ window.addEventListener("keydown",e=>{
 });
 window.addEventListener("keyup",e=>keys.delete(e.code));
 window.addEventListener("blur",()=>{if(state==="fight")pause();else resetInput()});
-document.addEventListener("visibilitychange",()=>{if(document.hidden&&state==="fight")pause()});
+function redrawSurfaces(){
+  invalidateScenery();last=0;nextMobileDraw=0;
+  if(player&&state!=="home"&&!document.hidden)resize();
+}
+canvas.addEventListener("contextlost",()=>{
+  fieldLost=true;
+  if(state==="fight")pause();
+});
+canvas.addEventListener("contextrestored",()=>{fieldLost=false;redrawSurfaces()});
+scenery.addEventListener("contextlost",()=>{sceneryLost=true;invalidateScenery()});
+scenery.addEventListener("contextrestored",()=>{sceneryLost=false;redrawSurfaces()});
+document.addEventListener("visibilitychange",()=>{
+  if(document.hidden){
+    if(state==="fight")pause();
+  }else if(touchUI)requestAnimationFrame(redrawSurfaces);
+});
+window.addEventListener("pageshow",e=>{if(e.persisted&&touchUI)requestAnimationFrame(redrawSurfaces)});
 window.addEventListener("resize",resize);
 window.addEventListener("orientationchange",resetInput);
 $("guide").onclick=showGuide;$("records").onclick=records;$("sound").onclick=toggleSound;$("pause").onclick=pause;
 $("mapButton").onclick=()=>{if(state==="fight")showFloorMap()};
 $("relicButton").onclick=showRelicInventory;
 $("interact").onclick=interact;
-for(let i=0;i<30;i++){
+for(let i=0;i<(touchUI?12:30);i++){
   const m=document.createElement("i");m.className="ember";m.style.cssText=`--x:${between(0,100)}%;--r:${between(1,3)}px;--dx:${between(-70,55)}px;--time:${between(5,12)}s;--delay:${between(-12,0)}s`;$("embers").append(m);
 }
 
 function loop(ms){
+  requestAnimationFrame(loop);
+  if(document.hidden||fieldLost||!ctx){last=0;return}
   const dt=last?clamp((ms-last)/1000,0,.033):0;last=ms;
   if(state==="fight"){
     visualTime=(visualTime+dt)%86400;stepEffects(dt);
     if(hitStop>0)hitStop-=dt;else tick(dt);
     hudTime-=dt;if(hudTime<=0){hudTime=.078;drawHud()}
-    draw();
   }else if(state==="descend"){
     descent.time-=dt;
     if(descent.time<=0){const {path}=descent;descent=null;stage++;enter(path)}
+  }else return;
+  if(!touchUI||ms>=nextMobileDraw-.5){
+    nextMobileDraw=Math.max(nextMobileDraw+MOBILE_DRAW_INTERVAL,ms+MOBILE_DRAW_INTERVAL/2);
     draw();
   }
-  requestAnimationFrame(loop);
 }
 syncTouchLayout();resize();syncSound();updateBest();
 requestArt("sprites","high");

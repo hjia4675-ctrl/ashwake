@@ -5,6 +5,7 @@ const WORLD_W=MAZE_COLS*TILE, WORLD_H=MAZE_ROWS*TILE;
 const BOSS_ROOM_SEAL=3;
 const tileIndex=(x,y)=>y*MAZE_COLS+x;
 const tileAt=(x,y)=>tileIndex(Math.floor(x/TILE),Math.floor(y/TILE));
+const tileDirections=[[-1,0],[1,0],[0,-1],[0,1]];
 
 const roomForms={
   landing:{name:"阶梯前庭",crop:[.13,.25,.71,.58]},
@@ -168,9 +169,10 @@ function mapDistances(map,origin){
   queue[0]=origin;result[origin]=0;
   for(let i=0;i<size;i++){
     const k=queue[i],x=k%MAZE_COLS,y=Math.floor(k/MAZE_COLS);
-    for(const [nx,ny] of [[x-1,y],[x+1,y],[x,y-1],[x,y+1]]){
+    for(const [dx,dy] of tileDirections){
+      const nx=x+dx,ny=y+dy;
       const n=tileIndex(nx,ny);
-      if(!openTile(map,nx,ny)||result[n]>=0)continue;
+      if(result[n]>=0||!openTile(map,nx,ny))continue;
       result[n]=result[k]+1;queue[size++]=n;
     }
   }

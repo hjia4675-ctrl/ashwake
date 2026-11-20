@@ -20,7 +20,7 @@
 .game-actions:has(#mapButton){gap:5px}.game-actions #mapButton{padding-inline:8px}
 .panel:has(.floor-map){width:min(100%,680px)}
 .floor-map{position:relative;height:clamp(214px,42dvh,336px);margin:13px 0 0;overflow:hidden;border:1px solid #573b40;background:radial-gradient(ellipse at 50% 35%,#302027,#161017 80%)}
-.floor-map canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.floor-map .map-wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 .map-node{position:absolute;left:var(--map-x);top:var(--map-y);transform:translate(-50%,-100%);white-space:nowrap;padding:2px 4px;text-align:center;background:#21171ee6;color:var(--map-color);font-size:clamp(9px,1.7vw,12px)}.map-node.current{outline:1px solid #a38772}
 .map-status{display:flex;flex-wrap:wrap;align-items:center;gap:7px;color:#d5b5a7;font-size:11px}.map-status span{padding:4px 6px;border:1px solid #584048}.map-status .on{color:#b6ebd9;border-color:#678a7f}
 #interact{position:absolute;bottom:clamp(82px,15vh,132px);left:50%;transform:translateX(-50%);min-height:45px;max-width:min(92%,520px);text-align:center;color:#ffe3b4;background:#221621f2;border-color:#ba875c;box-shadow:0 5px 24px #08070bb0;font-weight:700}#interact kbd{padding:2px 5px;border:1px solid #775549;margin-right:8px}#interact small{display:block;color:#e7c3ad;margin-top:6px;font-size:11px;font-weight:500;line-height:1.6;white-space:pre-line}#interact small:empty{display:none}
@@ -161,7 +161,7 @@
 }
 .touch-ui.touch-left #touchMove{left:auto;right:var(--hud-right)}
 .touch-ui.touch-left #stick{left:var(--stick-x,calc(100% - var(--stick-rest)))}
-.touch-ui .curtain{padding:max(10px,var(--safe-top)) max(10px,var(--safe-right)) max(10px,var(--safe-bottom)) max(10px,var(--safe-left));grid-template-rows:minmax(0,1fr);overscroll-behavior:contain}
+.touch-ui .curtain{padding:max(10px,var(--safe-top)) max(10px,var(--safe-right)) max(10px,var(--safe-bottom)) max(10px,var(--safe-left));grid-template-rows:minmax(0,1fr);overscroll-behavior:contain;background:#0a080cee;backdrop-filter:none}
 .touch-ui.touch-rotated .curtain{position:absolute}
 .touch-ui .panel{padding:clamp(13px,4vmin,24px);touch-action:pan-y;scrollbar-width:thin}
 .touch-ui .panel button{min-height:44px}
