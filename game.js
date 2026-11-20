@@ -102,7 +102,7 @@ const schools = {
     ["vamp","♦","温热血石",`击杀小怪时，每份回复 ${LEECH_KILL_HEAL} 点生命，每层小怪击杀回血上限每份增加 ${LEECH_LIMIT} 点。每打掉首领 20% 最大生命，每份再回 ${LEECH_BOSS_HEAL} 点，每个首领最多触发四次。`,p=>p.leech++],
     ["plate","⬡","钟铜残片","受到的伤害降低 15%。",p=>p.armor*=.85,RESTRICTED_RELIC_STACK_LIMIT],
     ["guard","◇","无声庇佑",`每份提供一次复活。受到致命伤害时消耗一次，原地恢复至最大生命值的 ${REVIVE_HP_PERCENT}%。`,p=>p.revives++],
-    ["balm","✿","晚钟药囊","立即回复 30 点生命，此后每进入新一层额外回复 25 点。",p=>{p.hp+=30;p.roomHeal+=25}],
+    ["balm","✿","晚钟药囊","生命上限提高 8 点，立即回复 30 点生命。此后每进入新一层额外回复 25 点。",p=>{p.maxHp+=8;p.hp+=30;p.roomHeal+=25}],
     ["skin","◈","白铁甲片","受到的伤害降低 8%，受伤后的无敌时间延长 0.34 秒。",p=>{p.armor*=.92;p.hurtInv+=.34}]
   ]}
 };
@@ -198,11 +198,19 @@ let touchAim=null, weaponAim=null;
 let selected=[], previousRelicOffer=[], modalChoices=[], previousFocus, lastAction="";
 const scrollLockKeys=["Space","ArrowLeft","ArrowRight","ArrowUp","ArrowDown"];
 
-function resize(paint=true){
-  const rotated=touchUI&&innerWidth<innerHeight;
+function syncTouchViewport(){
+  const app=$("app"), viewport=window.visualViewport;
+  const rotated=innerWidth<innerHeight;
   if(rotated!==touchRotated){
-    touchRotated=rotated;$("app").classList.toggle("touch-rotated",rotated);resetInput();
+    touchRotated=rotated;app.classList.toggle("touch-rotated",rotated);resetInput();
   }
+  app.style.setProperty("--screen-width",`${viewport?.width||innerWidth}px`);
+  app.style.setProperty("--screen-height",`${viewport?.height||innerHeight}px`);
+  app.style.setProperty("--screen-left",`${viewport?.offsetLeft??0}px`);
+  app.style.setProperty("--screen-top",`${viewport?.offsetTop??0}px`);
+}
+function resize(paint=true){
+  if(touchUI)syncTouchViewport();
   const box=canvas.getBoundingClientRect();
   const width=touchRotated?box.height:box.width, height=touchRotated?box.width:box.height;
   if(!width||!height)return;
@@ -1715,20 +1723,29 @@ function showModal(body, choices=[]){
   if($("curtain").hidden)previousFocus=document.activeElement;
   const panel=$("panel");
   const touchPause=touchUI&&state==="pause";
+  const touchMerchant=touchUI&&state==="merchant";
+  const touchRelics=touchUI&&(state==="reward"||state==="tribute");
   panel.classList.toggle("pause-panel",touchPause);
-  panel.classList.toggle("merchant-panel",touchUI&&state==="merchant");
-  panel.classList.toggle("relic-choice-panel",touchUI&&(state==="reward"||state==="tribute"));
+  panel.classList.toggle("merchant-panel",touchMerchant);
+  panel.classList.toggle("relic-choice-panel",touchRelics);
   modalChoices=choices;panel.innerHTML=body;$("curtain").hidden=false;
   $("home").inert=true;$("game").inert=true;
   if(touchUI){
+    syncTouchViewport();
+    const footer=!touchPause&&!touchMerchant&&!touchRelics&&panel.querySelector(":scope > .button-row:last-child");
+    panel.classList.toggle("modal-with-footer",Boolean(footer));
+    if(footer){
+      const content=document.createElement("div");content.className="modal-content";
+      while(panel.firstChild!==footer)content.append(panel.firstChild);
+      panel.prepend(content);
+    }
     panel.scrollTop=0;
-    if(touchPause)panel.focus({preventScroll:true});
-    else panel.querySelector("button:not(:disabled)")?.focus({preventScroll:true});
+    panel.focus({preventScroll:true});
   }else panel.querySelector("button")?.focus();
 }
 function closeModal(){
   $("curtain").hidden=true;$("home").inert=false;$("game").inert=false;modalChoices=[];
-  if(previousFocus&&previousFocus.getClientRects().length)previousFocus.focus({preventScroll:true});
+  if((!touchUI||lastAction==="keyboard")&&previousFocus?.getClientRects().length)previousFocus.focus({preventScroll:true});
   previousFocus=null;
 }
 const heading=(title,desc="")=>`<h2 id="panelTitle" class="panel-title">${title}</h2>${desc?`<p>${desc}</p>`:""}`;
@@ -2128,9 +2145,10 @@ modalPanel.addEventListener("pointerdown",e=>{
   if(e.isPrimary===false&&panelSwipe?.items.isConnected)return;
   panelSwipe=null;draggedPanelArea=null;
   if(e.pointerType!=="touch"||!touchRotated)return;
-  const items=e.target.closest(".pause-panel > .pause-body, .merchant-panel > .choices, .relic-choice-panel > .choices");
-  if(items&&items.scrollHeight>items.clientHeight){
-    panelSwipe={id:e.pointerId,items,x:e.clientX,y:e.clientY,top:items.scrollTop};
+  const scrollAreas=".panel, .modal-content, .pause-body, .merchant-panel > .choices, .relic-choice-panel > .choices, .inventory-list";
+  for(let items=e.target.closest(scrollAreas);items;items=items.parentElement?.closest(scrollAreas)){
+    if(items.scrollHeight<=items.clientHeight||getComputedStyle(items).overflowY==="hidden")continue;
+    panelSwipe={id:e.pointerId,items,x:e.clientX,y:e.clientY,top:items.scrollTop};break;
   }
 });
 modalPanel.addEventListener("pointermove",e=>{
@@ -2210,6 +2228,8 @@ document.addEventListener("visibilitychange",()=>{
 });
 window.addEventListener("pageshow",e=>{if(e.persisted&&touchUI)requestAnimationFrame(redrawSurfaces)});
 window.addEventListener("resize",resize);
+window.visualViewport?.addEventListener("resize",()=>{if(touchUI)resize()});
+window.visualViewport?.addEventListener("scroll",()=>{if(touchUI)syncTouchViewport()});
 window.addEventListener("orientationchange",resetInput);
 $("guide").onclick=showGuide;$("records").onclick=records;$("sound").onclick=toggleSound;$("pause").onclick=pause;
 $("mapButton").onclick=()=>{if(state==="fight")showFloorMap()};

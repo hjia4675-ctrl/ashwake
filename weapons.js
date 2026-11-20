@@ -242,21 +242,41 @@ function switchWeapon(){
   label(player.x,player.y-58,weapon.name,weapon.color);sfx("choose");drawHud();
 }
 
-function addWeaponArmory({x,y},title,random=Math.random){
+function weaponDropPoint({x,y}){
+  const clearance=player.r+4;
+  if(standOn(floor,x,y,clearance))return {x,y};
+  const tx=Math.floor(x/TILE),ty=Math.floor(y/TILE);
+  const insideTile=(col,row)=>({
+    x:clamp(x,col*TILE+clearance,(col+1)*TILE-clearance),
+    y:clamp(y,row*TILE+clearance,(row+1)*TILE-clearance)
+  });
+  if(openTile(floor,tx,ty))return insideTile(tx,ty);
+
+  const reachable=mapDistances(floor,tileAt(player.x,player.y));
+  let nearest=null, gap=Infinity;
+  for(let row=ty-1;row<=ty+1;row++)for(let col=tx-1;col<=tx+1;col++){
+    if(!openTile(floor,col,row)||reachable[tileIndex(col,row)]<0)continue;
+    const point=insideTile(col,row), distance=Math.hypot(point.x-x,point.y-y);
+    if(distance<gap){nearest=point;gap=distance}
+  }
+  return nearest??{x:player.x,y:player.y};
+}
+function addWeaponArmory(origin,title,random=Math.random){
   const pool=[...weaponIds];
   for(let i=pool.length-1;i>0;i--){
     const j=Math.floor(random()*(i+1));
     [pool[i],pool[j]]=[pool[j],pool[i]];
   }
-  floor.armories.push({x,y,title,pool});
+  floor.armories.push({...weaponDropPoint(origin),title,pool});
 }
 function armoryChoices(armory){return armory.pool.filter(id=>!player.weapons.includes(id)).slice(0,ARMORY_OFFER_COUNT)}
 function dropWeapon(e,random=Math.random){
   if(e.id==="warden"){addWeaponArmory(e,"铸钟武库",random);return}
   if(e.boss||random()>=DROP_CHANCE)return;
   const id=weaponIds[Math.floor(random()*weaponIds.length)];
-  floor.loot.push({x:e.x,y:e.y,id});
-  label(e.x,e.y-36,weaponBook[id].name,weaponBook[id].color);
+  const point=weaponDropPoint(e);
+  floor.loot.push({...point,id});
+  label(point.x,point.y-36,weaponBook[id].name,weaponBook[id].color);
 }
 function weaponCard(id,index,disabled=false){
   const w=weaponBook[id];
@@ -289,9 +309,9 @@ function equipWeapon(loot,id,slot){
   equipCarriedWeapon(id,slot,loot);
   closeWeaponLoot();
 }
-function equipCarriedWeapon(id,slot,{x,y}){
+function equipCarriedWeapon(id,slot,origin){
   const old=player.weapons[slot];
-  if(old)floor.loot.push({x,y,id:old});
+  if(old)floor.loot.push({...weaponDropPoint(origin),id:old});
   player.weapons[slot]=id;player.weaponSlot=slot;
   Object.assign(player,{pending:null,buffer:null,comboT:0,parry:0,weaponInput:0});
   label(player.x,player.y-52,"装备 · "+weaponBook[id].name,weaponBook[id].color);sfx("choose");

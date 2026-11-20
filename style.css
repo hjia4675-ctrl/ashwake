@@ -49,23 +49,19 @@
 .control-icon,.control-name,#touchMove{display:none}
 .home-footer .touch-hint,.touch-ui .home-footer .desktop-hint{display:none}
 .touch-ui .home-footer .touch-hint{display:block;font-size:10px}
-.touch-ui{
-  --view-width:100vw;--view-height:100vh;
+#app.touch-ui{
+  --view-width:var(--screen-width,100vw);--view-height:var(--screen-height,100vh);
   -webkit-text-size-adjust:100%;text-size-adjust:100%;
   --safe-top:env(safe-area-inset-top,0px);--safe-right:env(safe-area-inset-right,0px);
-  --safe-bottom:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px)
+  --safe-bottom:env(safe-area-inset-bottom,0px);--safe-left:env(safe-area-inset-left,0px);
+  position:fixed;top:var(--screen-top,0px);left:var(--screen-left,0px);
+  width:var(--view-width);height:var(--view-height);min-height:0;overflow:hidden
 }
-.touch-ui.touch-rotated{
-  --view-width:100vh;--view-height:100vw;
+#app.touch-ui.touch-rotated{
+  --view-width:var(--screen-height,100vh);--view-height:var(--screen-width,100vw);
   --safe-top:env(safe-area-inset-right,0px);--safe-right:env(safe-area-inset-bottom,0px);
   --safe-bottom:env(safe-area-inset-left,0px);--safe-left:env(safe-area-inset-top,0px);
-  position:fixed;top:0;left:100%;width:var(--view-width);height:var(--view-height);
-  transform:rotate(90deg);transform-origin:top left;overflow:hidden
-}
-#app.touch-rotated{min-height:0}
-@supports(width:100dvw){
-  .touch-ui{--view-width:100dvw;--view-height:100dvh}
-  .touch-ui.touch-rotated{--view-width:100dvh;--view-height:100dvw}
+  left:calc(var(--screen-left,0px) + var(--view-height));transform:rotate(90deg);transform-origin:top left
 }
 .touch-ui .home{min-height:0;height:var(--view-height);overflow:auto;overscroll-behavior:contain}
 .touch-ui .mast{height:calc(46px + var(--safe-top));flex:none;padding:var(--safe-top) calc(14px + var(--safe-right)) 0 calc(14px + var(--safe-left))}
@@ -162,9 +158,11 @@
 }
 .touch-ui.touch-left #touchMove{left:auto;right:var(--hud-right)}
 .touch-ui.touch-left #stick{left:var(--stick-x,calc(100% - var(--stick-rest)))}
-.touch-ui .curtain{padding:max(10px,var(--safe-top)) max(10px,var(--safe-right)) max(10px,var(--safe-bottom)) max(10px,var(--safe-left));grid-template-rows:minmax(0,1fr);overscroll-behavior:contain;background:#0a080cee;backdrop-filter:none}
-.touch-ui.touch-rotated .curtain{position:absolute}
-.touch-ui .panel{padding:clamp(13px,4vmin,24px);touch-action:pan-y;scrollbar-width:thin}
+.touch-ui .curtain{position:absolute;overflow:hidden;padding:max(8px,var(--safe-top)) max(8px,var(--safe-right)) max(8px,var(--safe-bottom)) max(8px,var(--safe-left));grid-template:minmax(0,1fr)/minmax(0,1fr);overscroll-behavior:contain;background:#0a080cee;backdrop-filter:none}
+.touch-ui .panel{min-width:0;min-height:0;max-width:100%;padding:clamp(10px,3vmin,20px);touch-action:pan-y;overscroll-behavior:contain;scrollbar-width:thin}
+.touch-ui .modal-with-footer{display:flex;flex-direction:column;gap:8px;overflow:hidden}
+.touch-ui .modal-content{min-height:0;overflow:auto;overscroll-behavior:contain;touch-action:pan-y;scrollbar-width:thin}
+.touch-ui .modal-with-footer > .button-row{flex:none;margin:0;gap:6px}
 .touch-ui .panel button{min-height:44px}
 .touch-ui .home button,.touch-ui .panel button{touch-action:manipulation}
 .touch-ui .panel-title{font-size:clamp(24px,6vmin,38px)}
@@ -180,7 +178,7 @@
   min-height:0;overflow:auto;overscroll-behavior:contain;touch-action:pan-y;
   scrollbar-color:#b1826c #251923;padding-inline-end:4px
 }
-.touch-ui.touch-rotated .pause-panel .pause-body{touch-action:none}
+.touch-ui.touch-rotated :is(.panel,.modal-content,.pause-body,.inventory-list){touch-action:none}
 .touch-ui .pause-panel .guide-grid{margin:0;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 10px}
 .touch-ui .pause-panel .guide-grid div{padding:4px 0;line-height:1.4;overflow-wrap:anywhere}
 .touch-ui .pause-panel .touch-options,.touch-ui .pause-panel .button-row{gap:6px}
