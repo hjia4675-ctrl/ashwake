@@ -28,10 +28,10 @@ const EMBER_SPLASH={impact:20,damage:17,targets:3,reach:72};
 const EMBER_SLOW=2;
 const WARDEN_ATTACKS=["slam","fan","rush"];
 const WARDEN_RUSH=[
-  {trigger:465,reach:470,speed:650,damage:26,recovery:1.14,cooldown:3.9},
-  {trigger:510,reach:515,speed:840,damage:31,recovery:.92,cooldown:3.45}
+  {trigger:465,reach:470,speed:860,tell:.48,damage:26,recovery:1.14,cooldown:3.5},
+  {trigger:510,reach:515,speed:1050,tell:.36,damage:31,recovery:.92,cooldown:3.05}
 ];
-const SENTINEL_SWEEP={reach:234,arc:.66,recovery:2.65};
+const SENTINEL_SWEEP={reach:265,arc:.72,recovery:2.05};
 const ARCHER_FRAME=[1083,77,353,402];
 const arenas = ["arena", "arena-2", "arena-3", "arena-4", "arena-5", "arena-6", "arena-7"];
 const art = {};
@@ -52,7 +52,7 @@ const beasts = {
   eye:   {name:"蚀日之眼", hp:90, speed:122, r:18, size:78, color:"#ffae5b", frame:[575,542,330,408], tell:.71, damage:15},
   warden:{name:"铸钟守卫", hp:2250, speed:94, r:39, size:151, color:"#d1abeb", frame:[955,513,560,461], tell:.83, damage:22, boss:true},
   bell:  {name:"永夜钟主", hp:6000, speed:111, r:49, size:184, color:"#ffaf67", frame:[955,513,560,461], tell:.76, damage:26, boss:true},
-  sentinel:{name:"拦路钟影", hp:76, speed:0, r:22, size:82, color:"#ffc582", frame:ARCHER_FRAME, tell:.76, damage:16, anchored:true}
+  sentinel:{name:"拦路钟影", hp:76, speed:0, r:22, size:82, color:"#ffc582", frame:ARCHER_FRAME, tell:.40, damage:20, anchored:true}
 };
 
 const schools = {
@@ -677,10 +677,10 @@ function beginTell(e,p,wardenAttack){
   if(!e.boss)e.pattern=e.id;
   else if(e.id==="warden")e.pattern=wardenAttack??nextWardenAttack(e);
   else e.pattern=["slam","fan","sigil","charge"][e.cycle%4];
-  e.cycle++;e.full=d.tell*windup;e.tell=e.full;
+  e.cycle++;e.full=e.pattern==="rush"?WARDEN_RUSH[e.phase-1].tell:d.tell*windup;e.tell=e.full;
   if(e.pattern==="rush")prepareWardenRush(e,p);
   if(e.anchored){
-    const target=predictRunner(p,e.homeRoom??e,.52,112);
+    const target=predictRunner(p,e.homeRoom??e,e.full,112);
     e.attackA=angle(e,target);
     tone(357,281,.23,.17,"triangle");
   }
@@ -714,31 +714,33 @@ function queueBossReinforcements(e){
   const node=e.homeRoom, p=player;
   if(!node)return;
   const projected=predictRunner(p,node,.82,210), heading=angle(node,projected);
-  const dx=Math.cos(heading),dy=Math.sin(heading);
-  const edgeX=dx>0?node.right*TILE-node.x:node.x-node.left*TILE;
-  const edgeY=dy>0?node.bottom*TILE-node.y:node.y-node.top*TILE;
-  const extent=Math.min((edgeX-58)/Math.max(.01,Math.abs(dx)),(edgeY-58)/Math.max(.01,Math.abs(dy)));
-  const desired=range(node.x,node.y,heading,extent);
+  const tangent=(p.x-node.x)*p.moveVY-(p.y-node.y)*p.moveVX;
+  const flankHeading=heading+(tangent<0?-1:1)*PI*.62;
   const field=mapDistances(floor,tileAt(p.x,p.y));
-  const r=beasts.sentinel.r;
-  let anchor=null, best=Infinity;
+  const r=beasts.sentinel.r, spots=[];
   for(let y=node.top;y<node.bottom;y++)for(let x=node.left;x<node.right;x++){
     const k=tileIndex(x,y), px=(x+.5)*TILE,py=(y+.5)*TILE;
     if(floor.owners[k]!==node.number||field[k]<0||!standOn(floor,px,py,r))continue;
-    const playerSpace=Math.hypot(px-p.x,py-p.y),bossSpace=Math.hypot(px-e.x,py-e.y);
-    if(playerSpace<102||bossSpace<e.r+r+12)continue;
-    const score=Math.hypot(px-desired.x,py-desired.y);
-    if(score<best){best=score;anchor={x:px,y:py}}
+    const spot={x:px,y:py};
+    if(dist(spot,p)>=102&&dist(spot,e)>=e.r+r+12&&dist(spot,node)>=190)spots.push(spot);
   }
-  const ally=e.id==="bell"?"eye":"hound";
-  if(anchor){
-    queueEnemy(node,"sentinel",anchor.x,anchor.y,.78);
-    const flank=range(node.x,node.y,angle(node,anchor)+PI,132);
-    queueEnemy(node,ally,flank.x,flank.y,.98);
-  }else{
-    queueEnemy(node,ally,node.x-135,node.y+45,.78);
-    queueEnemy(node,ally,node.x+135,node.y+45,.98);
+  const anchors=[];
+  for(const [direction,delay] of [[heading,.68],[flankHeading,1.08]]){
+    const dx=Math.cos(direction),dy=Math.sin(direction);
+    const edgeX=dx>0?node.right*TILE-node.x:node.x-node.left*TILE;
+    const edgeY=dy>0?node.bottom*TILE-node.y:node.y-node.top*TILE;
+    const extent=Math.min((edgeX-58)/Math.max(.01,Math.abs(dx)),(edgeY-58)/Math.max(.01,Math.abs(dy)));
+    const desired=range(node.x,node.y,direction,extent);
+    let anchor=null,best=Infinity;
+    for(const spot of spots){
+      if(anchors.some(other=>dist(other,spot)<260))continue;
+      const score=dist(spot,desired);
+      if(score<best){best=score;anchor=spot}
+    }
+    if(anchor){anchors.push(anchor);queueEnemy(node,"sentinel",anchor.x,anchor.y,delay)}
   }
+  const flank=range(node.x,node.y,(anchors[0]?angle(node,anchors[0]):heading)+PI,132);
+  queueEnemy(node,e.id==="bell"?"eye":"hound",flank.x,flank.y,.90);
 }
 function stepWardenRush(e,dt){
   const rush=e.rush, {tuning,ux,uy}=rush, p=player;
@@ -824,7 +826,7 @@ function stepEnemy(e,dt){
   if(e.hp<=0)return;
   if(e.boss&&e.phase===1&&e.hp<e.maxHp*.5){
     e.phase=2;e.tell=0;e.rush=null;e.recoveringRush=false;e.cd=.5;ring(e.x,e.y,160,e.color,.8);sfx("bell");
-    announce(e.id==="bell"?"永夜震鸣":"钟铜崩裂","第二阶段 · 留意外圈的扇形预警",1.3);
+    announce(e.id==="bell"?"永夜震鸣":"钟铜崩裂","第二阶段 · 两只钟影占据外圈",1.3);
     queueBossReinforcements(e);
   }
   if(e.tell>0){e.tell-=dt;if(e.tell<=0)strike(e);return}
@@ -834,7 +836,7 @@ function stepEnemy(e,dt){
   const sight=floorSight(floor,e,p);
   if(Math.abs(Math.cos(a))>.15)e.face=Math.cos(a)>0?-1:1;
   if(e.anchored){
-    if(sight&&e.cd<=0&&distance<SENTINEL_SWEEP.reach+22&&!foes.some(other=>other.hp>0&&other.boss&&other.homeRoom===e.homeRoom&&(other.tell>0||other.rush))){
+    if(sight&&e.cd<=0&&distance<SENTINEL_SWEEP.reach+22&&!foes.some(other=>other!==e&&other.hp>0&&other.homeRoom===e.homeRoom&&(other.boss||other.anchored)&&(other.tell>0||other.rush))){
       beginTell(e,p);
     }
     return;
@@ -1972,7 +1974,7 @@ function showGuide(){
   $("dismiss").onclick=closeModal;
 }
 function records(){
-  const lore={hound:"锁定前方后会直线扑袭。看到地面红线时向侧面闪避。",archer:"喜欢保持距离。青色虚线标示它的射击方向。",brute:"沉重的双拳会震击周围，攻击前有明显蓄力。",eye:"把爆裂刻印放在你刚才的位置。走出圆环即可躲开。",warden:"拉开距离时会预判你的跑位，亮起冲撞线后锁定方向。可急停、掉头或横闪，再趁收招反击。半血召唤裂骨猎犬和拦路钟影。",bell:"半血后加快出招、扩大符印范围，并召出蚀日之眼和拦路钟影。",sentinel:"在首领房外圈站定，预警后扫击扇形区域。绕到侧面或用远程武器先击破它。"};
+  const lore={hound:"锁定前方后会直线扑袭。看到地面红线时向侧面闪避。",archer:"喜欢保持距离。青色虚线标示它的射击方向。",brute:"沉重的双拳会震击周围，攻击前有明显蓄力。",eye:"把爆裂刻印放在你刚才的位置。走出圆环即可躲开。",warden:"拉开距离时会预判你的跑位，亮起冲撞线后迅速突进，半血后更快。可急停、掉头或横闪，再趁收招反击。半血召唤裂骨猎犬和两只拦路钟影。",bell:"半血后加快出招、扩大符印范围，并召出蚀日之眼和两只拦路钟影。",sentinel:"两只钟影分守首领房外圈，轮流预警并快速扫击扇形区域。绕到侧面或用远程武器先击破它。"};
   const known=Object.entries(beasts).map(([id,b])=>[save.unlocked[id]?b.name:"未遭遇",save.unlocked[id]?lore[id]:"在远征中首次遭遇后解锁"]);
   showModal(heading("远征档案",`远征 ${save.runs} 次 · 通关 ${save.wins} 次 · 最深 ${save.best} / 7 层 · 累计击败 ${save.kills}`)+grid(known)+row(btn("dismiss","返回",true)));
   $("dismiss").onclick=closeModal;
