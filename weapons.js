@@ -373,13 +373,13 @@ function paintWeapon(id,x,y,a,size){
 function equippedHero(p,y,face,tilt){
   const id=p.weapons[p.weaponSlot], w=weaponBook[id], size=77;
   if(!id){sprite(heroFrame,p.x,y,size,face,"#ff9977",tilt);return}
-  const base=spriteImage(),[sx,sy,sw,sh]=heroFrame, width=size*sw/sh;
+  const base=spriteImage(),[,,sw,sh]=heroFrame, width=size*sw/sh;
   ctx.save();ctx.translate(p.x,y);ctx.rotate(tilt);ctx.scale(face,1);
   if(base){
     ctx.save();ctx.translate(-width/2,-size*.87);ctx.scale(width/sw,size/sh);
     ctx.beginPath();ctx.rect(0,0,sw,sh);
     ctx.moveTo(0,232);ctx.lineTo(86,211);ctx.lineTo(116,241);ctx.lineTo(77,296);ctx.lineTo(45,389);ctx.lineTo(0,389);ctx.closePath();
-    ctx.clip("evenodd");ctx.drawImage(base,sx,sy,sw,sh,0,0,sw,sh);ctx.restore();
+    ctx.clip("evenodd");drawSpriteFrame(base,heroFrame,0,0,sw,sh);ctx.restore();
   }else drawSpriteSilhouette(heroFrame,size,"#ff9977",true);
   const directional=Math.atan2(Math.sin(p.a)*.55,Math.cos(p.a)*face);
   const moving=p.attack>0?1-p.attack/p.attackTotal:0;

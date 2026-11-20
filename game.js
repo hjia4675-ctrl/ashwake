@@ -43,7 +43,7 @@ const arenas = ["arena", "arena-2", "arena-3", "arena-4", "arena-5", "arena-6", 
 const art = {};
 function requestArt(name,priority="auto",retry=false){
   if(art[name]&&!retry)return art[name];
-  const source=name==="sprites"?"sprites.webp":name===arenas[0]&&touchUI?"arena-entry.webp":name+".jpg";
+  const source=name==="openingSprites"?"sprites-preview.webp":name==="sprites"?"sprites.webp":name===arenas[0]&&touchUI?"arena-entry.webp":name+".jpg";
   const url = source;
   const img=new Image();img.fetchPriority=priority;
   art[name]=img;
@@ -1211,7 +1211,13 @@ function glow(x,y,r,color){
 function line(x,y,tx,ty,color,width){ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(tx,ty);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke()}
 function spriteImage(){
   const img=art.sprites;
-  return img?.complete&&img.naturalWidth?img:null;
+  if(img?.complete&&img.naturalWidth)return img;
+  const preview=art.openingSprites;
+  return preview?.complete&&preview.naturalWidth?preview:null;
+}
+function drawSpriteFrame(img,[x,y,w,h],dx,dy,dw,dh){
+  const scale=img.naturalWidth/1536;
+  ctx.drawImage(img,x*scale,y*scale,w*scale,h*scale,dx,dy,dw,dh);
 }
 function drawSpriteSilhouette(frame,size,color,armed=false){
   const outline=spriteSilhouettes.get(frame);
@@ -1234,9 +1240,9 @@ function drawSpriteSilhouette(frame,size,color,armed=false){
   ctx.restore();
 }
 function sprite(frame,x,y,size,face,fallback,tilt=0){
-  const img=spriteImage(),[sx,sy,sw,sh]=frame,w=size*sw/sh;
+  const img=spriteImage(),[,,sw,sh]=frame,w=size*sw/sh;
   ctx.save();ctx.translate(x,y);ctx.rotate(tilt);ctx.scale(face,1);
-  if(img)ctx.drawImage(img,sx,sy,sw,sh,-w/2,-size*.87,w,size);
+  if(img)drawSpriteFrame(img,frame,-w/2,-size*.87,w,size);
   else drawSpriteSilhouette(frame,size,fallback);
   ctx.restore();
 }
@@ -2365,10 +2371,22 @@ function loop(ms){
     draw();
   }
 }
-if(ctx){
-  syncTouchLayout();resize();syncSound();updateBest();
+function enableStart(){
+  if($("start").dataset.ready==="true")return;
   $("start").onclick=startExpedition;$("start").disabled=false;$("start").setAttribute("aria-busy","false");
   $("startLabel").textContent=hasStoredRun?"继续远征":"开始远征";$("startStatus").hidden=true;
-  $("start").dataset.ready="true";$("app").classList.add("boot-ready");
+  $("start").dataset.ready="true";
+}
+if(ctx){
+  syncTouchLayout();resize();syncSound();updateBest();
+  const preview=requestArt("openingSprites","high");
+  if(preview.complete)enableStart();
+  else{
+    const timeout=setTimeout(enableStart,400);
+    const ready=()=>{clearTimeout(timeout);enableStart()};
+    preview.addEventListener("load",ready,{once:true});
+    preview.addEventListener("error",ready,{once:true});
+  }
+  $("app").classList.add("boot-ready");
   requestAnimationFrame(loop);
 }else window.ashwakeStartError?.("游戏画面初始化失败。点击重新加载再试一次。");
