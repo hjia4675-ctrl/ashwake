@@ -17,7 +17,7 @@
       start.onclick = function () { location.reload(); };
     }, 8000);
   </script>
-  <link rel="stylesheet" href="style.css?v=ready-entry">
+  <link rel="stylesheet" href="style.css?v=pause-fit">
   <link rel="preload" as="image" href="sprites.webp" type="image/webp" fetchpriority="high">
 </head>
 <body>
@@ -70,12 +70,12 @@
       </div>
       <div id="touchMove" aria-label="浮动移动摇杆"><div id="stick" aria-hidden="true"><i></i></div></div>
     </section>
-    <div id="curtain" class="curtain" hidden><section id="panel" class="panel" role="dialog" aria-modal="true" aria-labelledby="panelTitle"></section></div>
+    <div id="curtain" class="curtain" hidden><section id="panel" class="panel" role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="panelTitle"></section></div>
   </main>
   <script src="maze.js?v=smooth-mobile" defer></script>
   <script src="weapons.js?v=weapon-tuning" defer></script>
   <script src="merchant.js?v=touch-controls" defer></script>
   <script src="combat-audio.js?v=smooth-mobile" defer></script>
-  <script src="game.js?v=timed-combo" defer></script>
+  <script src="game.js?v=pause-fit" defer></script>
 </body>
 </html>

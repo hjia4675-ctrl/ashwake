@@ -1561,13 +1561,16 @@ function drawHud(){
 function showModal(body, choices=[]){
   if($("curtain").hidden)previousFocus=document.activeElement;
   const panel=$("panel");
+  const touchPause=touchUI&&state==="pause";
+  panel.classList.toggle("pause-panel",touchPause);
   panel.classList.toggle("merchant-panel",touchUI&&state==="merchant");
   panel.classList.toggle("relic-choice-panel",touchUI&&(state==="reward"||state==="tribute"));
   modalChoices=choices;panel.innerHTML=body;$("curtain").hidden=false;
   $("home").inert=true;$("game").inert=true;
   if(touchUI){
     panel.scrollTop=0;
-    panel.querySelector("button:not(:disabled)")?.focus({preventScroll:true});
+    if(touchPause)panel.focus({preventScroll:true});
+    else panel.querySelector("button:not(:disabled)")?.focus({preventScroll:true});
   }else panel.querySelector("button")?.focus();
 }
 function closeModal(){
@@ -1815,8 +1818,9 @@ function showPauseMenu(){
   if(acquired.some(r=>r.id==="guard"))loadout.push(["无声庇佑",`剩余复活 ${player.revives} 次，每次原地恢复至最大生命值的 ${REVIVE_HP_PERCENT}%。`]);
   const basics=touchUI?"点按自动瞄准，长按连击。亮起「接刃」时再次点按。":"左键 / J 普攻，T 切武器。普攻键亮起时点按可完美接招。";
   const ember=touchUI?"点按自动瞄准，拖动再松手可指定方向。":"E · 朝移动方向发射焚球。";
+  const details=grid([...loadout,["普攻与切换",basics],["闪步",`${touchUI?"沿摇杆方向":"空格"} · 短暂无敌，基础冷却 ${DASH_COOLDOWN} 秒。总减冷却上限 ${DASH_REDUCTION_CAP}%，最短 ${DASH_MIN_COOLDOWN.toFixed(2)} 秒。`],["焚印",ember+"基础三颗。获得五芒焰芯后发射五颗。"],["丧钟",`${touchUI?"":"Q · "}消耗 100 余烬，本层对附近可见敌人造成 ${FLOOR_BELL_DAMAGE[stage]} 点基础伤害。`]]);
   showModal(heading("远征暂停",`${rooms[stage][0]} · 第 ${stage+1} 重试炼`)+
-    grid([...loadout,["普攻与切换",basics],["闪步",`${touchUI?"沿摇杆方向":"空格"} · 短暂无敌，基础冷却 ${DASH_COOLDOWN} 秒。总减冷却上限 ${DASH_REDUCTION_CAP}%，最短 ${DASH_MIN_COOLDOWN.toFixed(2)} 秒。`],["焚印",ember+"基础三颗。获得五芒焰芯后发射五颗。"],["丧钟",`${touchUI?"":"Q · "}消耗 100 余烬，本层对附近可见敌人造成 ${FLOOR_BELL_DAMAGE[stage]} 点基础伤害。`]])+
+    (touchUI?`<div class="pause-body" tabindex="0" role="region" aria-label="本局装备和操作说明">${details}</div>`:details)+
     (touchUI?`<div class="touch-options">${btn("touchHand","")}${btn("touchSize","")}</div>`:"")+
     row(btn("resume","继续战斗",true),btn("pauseRelics","查看遗物"),btn("muteGame",save.muted?"开启音效":"关闭音效"),btn("leave","结束远征")));
   $("resume").onclick=resume;$("pauseRelics").onclick=showRelicInventory;$("leave").onclick=confirmLeave;
@@ -1965,32 +1969,35 @@ document.addEventListener("pointerdown",e=>{
   if(e.pointerType==="touch"&&!touchUI){touchUI=true;syncTouchLayout();resize();if(player&&state!=="home")drawHud()}
 },true);
 const modalPanel=$("panel");
-let choiceSwipe=null, choiceSwiped=false;
+let panelSwipe=null, draggedPanelArea=null;
 modalPanel.addEventListener("pointerdown",e=>{
-  if(choiceSwipe?.items.isConnected)return;
-  choiceSwipe=null;choiceSwiped=false;
+  if(e.isPrimary===false&&panelSwipe?.items.isConnected)return;
+  panelSwipe=null;draggedPanelArea=null;
   if(e.pointerType!=="touch"||!touchRotated)return;
-  const items=e.target.closest(".merchant-panel > .choices, .relic-choice-panel > .choices");
+  const items=e.target.closest(".pause-panel > .pause-body, .merchant-panel > .choices, .relic-choice-panel > .choices");
   if(items&&items.scrollHeight>items.clientHeight){
-    choiceSwipe={id:e.pointerId,items,x:e.clientX,y:e.clientY,top:items.scrollTop};
+    panelSwipe={id:e.pointerId,items,x:e.clientX,y:e.clientY,top:items.scrollTop};
   }
 });
 modalPanel.addEventListener("pointermove",e=>{
-  if(choiceSwipe?.id!==e.pointerId||!choiceSwipe.items.isConnected)return;
-  const {x,y}=controlDelta(e,choiceSwipe.x,choiceSwipe.y);
-  if(!choiceSwiped){
+  if(panelSwipe?.id!==e.pointerId||!panelSwipe.items.isConnected)return;
+  const {x,y}=controlDelta(e,panelSwipe.x,panelSwipe.y);
+  if(!draggedPanelArea){
     if(Math.abs(y)<9||Math.abs(y)<Math.abs(x))return;
-    choiceSwiped=true;
-    choiceSwipe.items.setPointerCapture(e.pointerId);
+    draggedPanelArea=panelSwipe.items;
+    draggedPanelArea.setPointerCapture(e.pointerId);
   }
-  choiceSwipe.items.scrollTop=choiceSwipe.top-y;
+  panelSwipe.items.scrollTop=panelSwipe.top-y;
 });
 for(const type of ["pointerup","pointercancel"]){
-  modalPanel.addEventListener(type,e=>{if(choiceSwipe?.id===e.pointerId)choiceSwipe=null});
+  modalPanel.addEventListener(type,e=>{if(panelSwipe?.id===e.pointerId)panelSwipe=null});
 }
+modalPanel.addEventListener("lostpointercapture",e=>{
+  if(panelSwipe?.id===e.pointerId&&panelSwipe.items===e.target)panelSwipe=null;
+});
 modalPanel.addEventListener("click",e=>{
-  if(!choiceSwiped||e.detail===0)return;
-  choiceSwiped=false;e.preventDefault();e.stopImmediatePropagation();
+  if(e.detail===0||!draggedPanelArea?.contains(e.target))return;
+  draggedPanelArea=null;e.preventDefault();e.stopImmediatePropagation();
 },true);
 modalPanel.addEventListener("click",e=>{
   const button=e.target.closest("[data-pick]");if(button)modalChoices[Number(button.dataset.pick)]?.();
