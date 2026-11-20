@@ -187,7 +187,6 @@ function sfx(name,after=0){
 let state="home", W=1120,H=630, scale=1, dpr=1, ox=0, oy=0, last=0, visualTime=0, hudTime=0;
 let fieldLost=false, nextMobileDraw=0, mobileTime=0, slowMobile=false, cadenceFrames=0, lateFrames=0;
 const MOBILE_STEP=1/60, MOBILE_TERRAIN_SCALE=.5, MOBILE_DRAW_INTERVAL=1000/60;
-let preparedEntry=null, entryTextureDeadline=0, entryStartDeadline=0;
 let relicInventoryReturn="fight";
 let player, stage=0, route="standard", kills=0, cleared=0, elapsed=0, acquired=[], foes=[], shots=[], orbs=[], debris=[], fx=[], floats=[], spawns=[], scene=0, bannerTimer=0, shake=0, hitStop=0, flash=0;
 let floor, chamber, nearby, descent, pulse=null, nextPulse=0, pulseIndex=0;
@@ -263,7 +262,7 @@ function saveExpedition(){
   if(!floor||!player||player.hp<=0||state==="home"||state==="end")return;
   lastRunSave=elapsed;
   // Rendering caches depend on the current device and can be regenerated.
-  const {entryArt,sceneryImage,sceneryScale,field,...map}=floor;
+  const {sceneryImage,sceneryScale,field,...map}=floor;
   try{
     localStorage.setItem(RUN_SAVE_KEY,encodeExpedition({
       stage,route,kills,cleared,elapsed,scene,player,floor:map,chamber,descent,pulse,nextPulse,pulseIndex,acquired,previousRelicOffer,
@@ -283,11 +282,11 @@ function restoreExpedition(){
   }catch{clearRunStorage();return false}
   ({stage,route,kills,cleared,elapsed,scene,player,floor,chamber,descent,pulse,nextPulse,pulseIndex,acquired,previousRelicOffer,
     foes,shots,spawns,orbs,weaponBolts,weaponFields,hitStop}=run);
-  lastRunSave=elapsed;preparedEntry=null;entryTextureDeadline=entryStartDeadline=0;
+  lastRunSave=elapsed;
   lastAction="";last=mobileTime=nextMobileDraw=hudTime=0;
   resetInput();player.moveVX=player.moveVY=0;player.moving=false;
   debris=[];fx=[];floats=[];weaponTraces=[];bannerTimer=shake=flash=0;$("banner").classList.remove("show");
-  floor.field=null;invalidateScenery();requestArt(arenas[stage],"high");warmCombatAudio(stage);
+  floor.field=null;invalidateScenery();loadSprites();requestArt(arenas[stage]);warmCombatAudio(stage);
   $("home").hidden=true;$("game").hidden=false;state="pause";
   nearby=nearInteraction();resize(false);drawHud();draw();showPauseMenu();
   return true;
@@ -324,7 +323,7 @@ function resize(paint=true){
   scale=Math.min(width/W,height/H);ox=(width-W*scale)*.5;oy=(height-H*scale)*.5;
   if(player&&state!=="home"){
     followCamera();
-    if(paint&&!(state==="end"&&entryStartDeadline))draw();
+    if(paint)draw();
   }
 }
 function followCamera(dt=0){
@@ -398,7 +397,7 @@ function entrySupply(path){
   const rules=routes[path];
   return {hp:rules.heal+player.roomHeal,ash:rules.entryAsh??0};
 }
-function enter(name,prepared=null){
+function enter(name){
   route=name;
   const arena=arenas[stage];
   if(touchUI)for(const name of arenas)if(name!==arena)delete art[name];
@@ -408,8 +407,7 @@ function enter(name,prepared=null){
     player.hp=Math.min(player.maxHp,player.hp+supply.hp);
     player.ash=Math.min(100,player.ash+supply.ash);
   }
-  floor=prepared??buildFloor();
-  if(!prepared)invalidateScenery();
+  floor=buildFloor();invalidateScenery();
   chamber=null;nearby=null;
   state="fight";scene=0;closeModal();resetInput();
   foes=[];shots=[];orbs=[];spawns=[];debris=[];fx=[];floats=[];weaponBolts=[];weaponFields=[];weaponTraces=[];flash=0;shake=0;hitStop=0;
@@ -478,21 +476,22 @@ function discover(){
     announce(chamberName(node),note+(floor.merchant?.node===node?" · 收钟人在此，肃清后可交易":""),1.65);
   }
 }
-function begin(prepared=null){
-  preparedEntry=null;entryTextureDeadline=entryStartDeadline=0;
+function loadSprites(){
+  requestArt("sprites","high",Boolean(art.sprites?.complete&&!art.sprites.naturalWidth));
+}
+function begin(){
   $("startLabel").textContent="开始远征";$("start").setAttribute("aria-busy","false");
-  if(art.sprites?.complete&&!art.sprites.naturalWidth)requestArt("sprites","high",true);
+  loadSprites();
   wakeAudio(); $("home").hidden=true;$("game").hidden=false;
   slowMobile=false;cadenceFrames=lateFrames=mobileTime=nextMobileDraw=last=0;
   resize(false);
-  stage=0;kills=0;cleared=0;elapsed=0;descent=null;acquired=[];previousRelicOffer=[];lastAction="";player=makePlayer();enter("standard",prepared);
+  stage=0;kills=0;cleared=0;elapsed=0;descent=null;acquired=[];previousRelicOffer=[];lastAction="";player=makePlayer();enter("standard");
   saveExpedition();
   if(touchUI)draw();
   $("pause").focus({preventScroll:true});$("pause").blur();
 }
 function home(){
   state="home";resetInput();closeModal();$("game").hidden=true;$("home").hidden=false;
-  preparedEntry=null;entryTextureDeadline=entryStartDeadline=0;
   if(touchUI){
     canvas.width=canvas.height=scenery.width=scenery.height=1;
     if(floor){floor.sceneryImage=null;invalidateScenery()}
@@ -1355,7 +1354,6 @@ function* paintEntrances(pen,map,color){
 let terrainJob=null;
 function invalidateScenery(){
   if(floor)floor.sceneryScale=0;
-  if(preparedEntry)preparedEntry.sceneryScale=0;
   terrainJob=null;sceneryRetryAt=0;
 }
 function* paintMaze(map,level,img,density){
@@ -1397,37 +1395,13 @@ function prepareScenery(map,level,img,density){
     terrainJob=null;map.sceneryScale=0;sceneryRetryAt=Date.now()+750;
   }
 }
-function prepareEntry(){
-  const now=Date.now(), image=requestArt(arenas[0],"high");
-  if(!preparedEntry){
-    if(!entryTextureDeadline)entryTextureDeadline=now+450;
-    if(!image.complete&&now<entryTextureDeadline)return;
-    preparedEntry=buildFloor(0,"standard");
-    preparedEntry.entryArt=image.complete&&image.naturalWidth?image:null;
-  }else if(!entryStartDeadline&&!preparedEntry.entryArt&&image.complete&&image.naturalWidth){
-    preparedEntry.entryArt=image;
-  }
-  prepareScenery(preparedEntry,0,preparedEntry.entryArt,MOBILE_TERRAIN_SCALE);
-  if(entryStartDeadline&&(preparedEntry.sceneryScale===MOBILE_TERRAIN_SCALE||now>=entryStartDeadline)){
-    begin(preparedEntry);
-  }
-}
 function startExpedition(){
   if(state==="home"&&hasStoredRun){
     wakeAudio();
     if(restoreExpedition())return;
     hasStoredRun=false;
   }
-  if(!touchUI){begin();return}
-  wakeAudio();
-  if(preparedEntry?.sceneryScale===MOBILE_TERRAIN_SCALE){begin(preparedEntry);return}
-  if(entryStartDeadline)return;
-  const now=Date.now();
-  entryTextureDeadline=Math.min(entryTextureDeadline||Infinity,now+110);
-  entryStartDeadline=now+680;
-  const label=state==="end"?$("again"):$("startLabel");
-  label.textContent="正在准备地牢…";
-  (state==="end"?label:$("start")).setAttribute("aria-busy","true");
+  begin();
 }
 function drawBasicTerrain(){
   ctx.fillStyle="#100d13";ctx.fillRect(camera.x-12,camera.y-12,W+24,H+24);
@@ -1441,9 +1415,9 @@ function drawBasicTerrain(){
   }
 }
 function drawArena(){
-  const image=requestArt(arenas[stage]), img=floor.entryArt!==undefined?floor.entryArt:image.complete&&image.naturalWidth?image:null;
+  const image=requestArt(arenas[stage]), img=image.complete&&image.naturalWidth?image:null;
   const density=touchUI?MOBILE_TERRAIN_SCALE:1;
-  if(floor.entryArt!==undefined||!touchUI||image.complete)prepareScenery(floor,stage,img,density);
+  if(!touchUI||image.complete)prepareScenery(floor,stage,img,density);
   if(!sceneryLost&&floor.sceneryScale===density){
     try{
       ctx.drawImage(scenery,camera.x*density,camera.y*density,W*density,H*density,camera.x,camera.y,W,H);
@@ -2369,7 +2343,6 @@ function trackMobileCadence(dt){
 }
 function loop(ms){
   requestAnimationFrame(loop);
-  if(touchUI&&(state==="home"&&!hasStoredRun||state==="end"&&entryStartDeadline)&&!document.hidden&&ctx)prepareEntry();
   if(document.hidden||fieldLost||!ctx||(state!=="fight"&&state!=="descend")){last=mobileTime=0;return}
   const dt=last?clamp((ms-last)/1000,0,touchUI?MOBILE_STEP*4:.033):0;last=ms;
   if(touchUI)trackMobileCadence(dt);
@@ -2392,9 +2365,10 @@ function loop(ms){
     draw();
   }
 }
-syncTouchLayout();resize();syncSound();updateBest();
-requestArt("sprites","high");
-if(touchUI&&!hasStoredRun)requestArt(arenas[0],"high");
-$("start").onclick=startExpedition;$("start").disabled=false;$("start").setAttribute("aria-busy","false");
-$("startLabel").textContent=hasStoredRun?"继续远征":"开始远征";$("startStatus").hidden=true;
-requestAnimationFrame(loop);
+if(ctx){
+  syncTouchLayout();resize();syncSound();updateBest();
+  $("start").onclick=startExpedition;$("start").disabled=false;$("start").setAttribute("aria-busy","false");
+  $("startLabel").textContent=hasStoredRun?"继续远征":"开始远征";$("startStatus").hidden=true;
+  $("start").dataset.ready="true";$("app").classList.add("boot-ready");
+  requestAnimationFrame(loop);
+}else window.ashwakeStartError?.("游戏画面初始化失败。点击重新加载再试一次。");
