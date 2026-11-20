@@ -150,16 +150,23 @@ function standOn(map,x,y,r=0){
   return true;
 }
 function walkBody(map,body,dx,dy){
+  if(!dx&&!dy)return;
   const steps=Math.max(1,Math.ceil(Math.max(Math.abs(dx),Math.abs(dy))/(TILE*.33)));
   const x=dx/steps,y=dy/steps,r=body.r??0;
   for(let i=0;i<steps;i++){
-    if(standOn(map,body.x+x,body.y,r))body.x+=x;
-    if(standOn(map,body.x,body.y+y,r))body.y+=y;
+    if(x&&standOn(map,body.x+x,body.y,r))body.x+=x;
+    if(y&&standOn(map,body.x,body.y+y,r))body.y+=y;
   }
 }
 function floorSight(map,a,b){
   const dx=b.x-a.x,dy=b.y-a.y,steps=Math.max(1,Math.ceil(Math.hypot(dx,dy)/(TILE/4)));
-  for(let i=1;i<=steps;i++)if(!standOn(map,a.x+dx*i/steps,a.y+dy*i/steps))return false;
+  let previousX, previousY;
+  for(let i=1;i<=steps;i++){
+    const x=Math.floor((a.x+dx*i/steps)/TILE),y=Math.floor((a.y+dy*i/steps)/TILE);
+    if(x===previousX&&y===previousY)continue;
+    if(!openTile(map,x,y))return false;
+    previousX=x;previousY=y;
+  }
   return true;
 }
 function mapDistances(map,origin){
@@ -181,7 +188,7 @@ function mapDistances(map,origin){
 
 const formTints={landing:"#e6ae6c",nave:"#d2ab77",cloister:"#aa95c2",rift:"#81c2df",chapel:"#ce89a5",switchback:"#d49b77",basin:"#8bbeb3",archives:"#b1a37b",gallery:"#a5acd4"};
 const floorMaterial=["#351c19","#142b38","#1d3429","#4a2117","#253a47","#291f46","#3e1d29"];
-function paintRoomFeatures(pen,map,level,color){
+function paintRoomFeatures(pen,map,level,color,nodes=map.nodes){
   function ellipse(x,y,rx,ry,fill,stroke,width=1){
     pen.beginPath();pen.ellipse(x,y,rx,ry,0,0,Math.PI*2);
     if(fill){pen.fillStyle=fill;pen.fill()}
@@ -199,7 +206,7 @@ function paintRoomFeatures(pen,map,level,color){
     ellipse(x,y,6,4,tint+"cf","#30212a",2);
     ellipse(x,y-1,2.6,1.7,"#fff1c4");
   }
-  for(const n of map.nodes){
+  for(const n of nodes){
     const tint=formTints[n.form], w=(n.right-n.left)*TILE,h=(n.bottom-n.top)*TILE;
     const left=n.left*TILE,top=n.top*TILE;
     pen.save();pen.beginPath();

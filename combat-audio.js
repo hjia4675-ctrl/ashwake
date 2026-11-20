@@ -56,6 +56,10 @@ const recentDeaths=new Map();
 const impactBuffers=new Map();
 const IMPACT_VOICES=10;
 let combatBus, impactVoices=0, impactVariation=0, bossDeathAudioUntil=0;
+const combatScriptUrl=typeof document!=="undefined"?document.currentScript?.src:"";
+const combatWorkerSource="";
+const pendingImpacts=new Map();
+let soundWorker, soundWorkerFailed=false;
 
 function renderCombatImpact(cue,step=0,perfect=false){
   const recipe=combatSounds[cue];
@@ -111,6 +115,73 @@ function renderCombatImpact(cue,step=0,perfect=false){
   return data;
 }
 
+if(typeof document==="undefined"&&typeof self!=="undefined"){
+  self.onmessage=({data:{cue,step,perfect,key}})=>{
+    const pcm=renderCombatImpact(cue,step,perfect);
+    self.postMessage({key,pcm},[pcm.buffer]);
+  };
+}
+
+function storeImpactBuffer(key,data){
+  const buffer=audio.createBuffer(1,data.length,COMBAT_SAMPLE_RATE);
+  buffer.getChannelData(0).set(data);
+  impactBuffers.set(key,buffer);
+  return buffer;
+}
+function getSoundWorker(){
+  if(!touchUI||soundWorkerFailed||typeof Worker==="undefined")return null;
+  if(soundWorker)return soundWorker;
+  let blobUrl;
+  const releaseUrl=()=>{if(blobUrl){URL.revokeObjectURL(blobUrl);blobUrl=null}};
+  try{
+    if(!combatScriptUrl&&!combatWorkerSource)return null;
+    if(!combatScriptUrl)blobUrl=URL.createObjectURL(new Blob([combatWorkerSource],{type:"text/javascript"}));
+    soundWorker=new Worker(combatScriptUrl||blobUrl);
+    soundWorker.onmessage=({data:{key,pcm}})=>{
+      releaseUrl();
+      const pending=pendingImpacts.get(key);
+      pendingImpacts.delete(key);
+      if(!pending||!audio)return;
+      storeImpactBuffer(key,pcm);
+      const play=pending.play;
+      if(play&&play.owner===player&&Date.now()-play.at<=240&&!document.hidden){
+        const [cue,step,perfect,gain,pan,rate,delay,priority]=play.args;
+        playCombatCue(cue,step,perfect,gain,pan,rate,Math.max(0,delay-(audio.currentTime-play.audioTime)),priority);
+      }
+    };
+    soundWorker.onerror=()=>{
+      releaseUrl();soundWorker.terminate();soundWorker=null;soundWorkerFailed=true;
+      pendingImpacts.clear();
+    };
+  }catch{
+    releaseUrl();soundWorkerFailed=true;
+  }
+  return soundWorker;
+}
+function queueImpactBuffer(cue,step=0,perfect=false,play=null){
+  const key=cue+":"+step+":"+Number(perfect);
+  if(impactBuffers.has(key))return false;
+  const worker=getSoundWorker();
+  if(!worker)return false;
+  const pending=pendingImpacts.get(key);
+  if(pending){if(!pending.play)pending.play=play}
+  else{
+    pendingImpacts.set(key,{play});
+    worker.postMessage({cue,step,perfect,key});
+  }
+  return true;
+}
+function warmCombatAudio(level){
+  if(!touchUI||!audio||save.muted)return;
+  if(level===0){
+    for(let step=0;step<3;step++){
+      queueImpactBuffer("starter",step);
+      queueImpactBuffer("starter",step,true);
+    }
+    for(const cue of ["emberImpact","deathHound","deathArcher","deathBrute","deathEye"])queueImpactBuffer(cue);
+  }else if(level===3||level===6)queueImpactBuffer(level===3?"deathWarden":"deathBell");
+}
+
 function prepareCombatAudio(){
   if(combatBus)return;
   combatBus=audio.createDynamicsCompressor();
@@ -122,15 +193,15 @@ function prepareCombatAudio(){
 function playCombatCue(cue,step=0,perfect=false,gain=.73,pan=0,rate=1,delay=0,bossPriority=false){
   const maxVoices=IMPACT_VOICES+(bossPriority?2:0);
   if(save.muted||!audio||audio.state!=="running"||impactVoices>=maxVoices)return false;
-  prepareCombatAudio();
   const key=cue+":"+step+":"+Number(perfect);
   let buffer=impactBuffers.get(key);
   if(!buffer){
-    const data=renderCombatImpact(cue,step,perfect);
-    buffer=audio.createBuffer(1,data.length,COMBAT_SAMPLE_RATE);
-    buffer.getChannelData(0).set(data);
-    impactBuffers.set(key,buffer);
+    if(touchUI&&queueImpactBuffer(cue,step,perfect,{
+      args:[cue,step,perfect,gain,pan,rate,delay,bossPriority],owner:player,at:Date.now(),audioTime:audio.currentTime
+    }))return true;
+    buffer=storeImpactBuffer(key,renderCombatImpact(cue,step,perfect));
   }
+  prepareCombatAudio();
   const source=audio.createBufferSource(), volume=audio.createGain();
   source.buffer=buffer;
   source.playbackRate.value=rate*[1,.985,1.013,.972,1.025][impactVariation++%5];

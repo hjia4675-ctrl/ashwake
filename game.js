@@ -176,8 +176,8 @@ function sfx(name,after=0){
 }
 
 let state="home", W=1120,H=630, scale=1, dpr=1, ox=0, oy=0, last=0, visualTime=0, hudTime=0;
-let fieldLost=false, nextMobileDraw=0;
-const MOBILE_PIXELS=800000, MOBILE_TERRAIN_SCALE=.5, MOBILE_DRAW_INTERVAL=1000/60;
+let fieldLost=false, nextMobileDraw=0, mobileTime=0, slowMobile=false, cadenceFrames=0, lateFrames=0;
+const MOBILE_STEP=1/60, MOBILE_TERRAIN_SCALE=.5, MOBILE_DRAW_INTERVAL=1000/60;
 let relicInventoryReturn="fight";
 let player, stage=0, route="standard", kills=0, cleared=0, elapsed=0, acquired=[], foes=[], shots=[], orbs=[], debris=[], fx=[], floats=[], spawns=[], scene=0, bannerTimer=0, shake=0, hitStop=0, flash=0;
 let floor, chamber, nearby, descent, pulse=null, nextPulse=0, pulseIndex=0;
@@ -188,7 +188,7 @@ let touchAim=null, weaponAim=null;
 let selected=[], previousRelicOffer=[], modalChoices=[], previousFocus, lastAction="";
 const scrollLockKeys=["Space","ArrowLeft","ArrowRight","ArrowUp","ArrowDown"];
 
-function resize(){
+function resize(paint=true){
   const rotated=touchUI&&innerWidth<innerHeight;
   if(rotated!==touchRotated){
     touchRotated=rotated;$("app").classList.toggle("touch-rotated",rotated);resetInput();
@@ -202,13 +202,14 @@ function resize(){
   }else{
     H=ratio<1?820:630;W=clamp(Math.round(H*ratio),480,1350);
   }
-  const limit=touchUI?Math.min(1.4,Math.sqrt(MOBILE_PIXELS/(width*height))):2;
+  const budget=slowMobile?320000:600000;
+  const limit=touchUI?Math.min(slowMobile?1:1.25,Math.sqrt(budget/(width*height))):2;
   dpr=Math.min(limit,devicePixelRatio||1);
   const pixelsWide=Math.max(1,Math.floor(width*dpr)), pixelsHigh=Math.max(1,Math.floor(height*dpr));
   if(canvas.width!==pixelsWide)canvas.width=pixelsWide;
   if(canvas.height!==pixelsHigh)canvas.height=pixelsHigh;
   scale=Math.min(width/W,height/H);ox=(width-W*scale)*.5;oy=(height-H*scale)*.5;
-  if(player&&state!=="home"){followCamera();draw()}
+  if(player&&state!=="home"){followCamera();if(paint)draw()}
 }
 function followCamera(dt=0){
   const blend=dt?1-Math.exp(-dt*10):1;
@@ -292,12 +293,13 @@ function enter(name){
     player.hp=Math.min(player.maxHp,player.hp+supply.hp);
     player.ash=Math.min(100,player.ash+supply.ash);
   }
-  floor=buildFloor();sceneryRetryAt=0;chamber=null;nearby=null;
+  floor=buildFloor();invalidateScenery();chamber=null;nearby=null;
   state="fight";scene=0;closeModal();resetInput();
   foes=[];shots=[];orbs=[];spawns=[];debris=[];fx=[];floats=[];weaponBolts=[];weaponFields=[];weaponTraces=[];flash=0;shake=0;hitStop=0;
   const origin=floor.nodes[0];
   Object.assign(player,{x:origin.x,y:origin.y+116,a:-PI/2,attack:0,attackTotal:0,pending:null,buffer:null,edge:0,skill:0,dash:0,dashCd:0,dashMinCd:0,inv:.8,combo:0,comboT:0,parry:0,weaponInput:0,leechUsed:0,dustUsed:0});
   followCamera();discover();drawHud();
+  warmCombatAudio(stage);
 }
 function chamberName(node){
   if(!node)return "迷宫甬道";
@@ -361,7 +363,8 @@ function discover(){
 function begin(){
   if(art.sprites?.complete&&!art.sprites.naturalWidth)requestArt("sprites","high",true);
   wakeAudio(); $("home").hidden=true;$("game").hidden=false;
-  resize();
+  slowMobile=false;cadenceFrames=lateFrames=mobileTime=nextMobileDraw=last=0;
+  resize(false);
   stage=0;kills=0;cleared=0;elapsed=0;acquired=[];previousRelicOffer=[];lastAction="";player=makePlayer();enter("standard");
   $("pause").focus({preventScroll:true});$("pause").blur();
 }
@@ -385,7 +388,9 @@ function ash(n){
   player.ash=clamp(Math.round(total*1e6)/1e6,0,100);
 }
 function sparks(x,y,color,count=12,speed=165,a=null){
-  if(touchUI)count=Math.min(Math.ceil(count*.55),128-debris.length);
+  if(touchUI){
+    count=Math.min(Math.ceil(count*(slowMobile?.32:.55)),(slowMobile?64:128)-debris.length);
+  }
   for(let i=0;i<count;i++){
     const direction=a===null?between(0,TAU):a+between(-.8,.8), v=between(35,speed), life=between(.16,.51);
     debris.push({x,y,vx:Math.cos(direction)*v,vy:Math.sin(direction)*v,color,r:between(1,3),life,max:life});
@@ -711,9 +716,11 @@ function stepEnemy(e,dt){
     if(e.rush){e.cd=e.rush.tuning.recovery;e.rush=null}
     e.tell=0;return;
   }
-  const sight=floorSight(floor,e,p);
   e.flash=Math.max(0,e.flash-dt);e.cd-=dt;e.stun-=dt;
-  walkBody(floor,e,e.kx*dt,e.ky*dt);e.kx*=Math.pow(.003,dt);e.ky*=Math.pow(.003,dt);
+  if(e.kx||e.ky){
+    walkBody(floor,e,e.kx*dt,e.ky*dt);
+    const decay=Math.pow(.003,dt);e.kx*=decay;e.ky*=decay;
+  }
   if(e.burn>0){
     e.burnTick-=dt;
     if(e.burnTick<=0){e.burn--;hurt(e,e.burnDamage,a,0,true);e.burnTick+=CINDER.interval}
@@ -729,6 +736,7 @@ function stepEnemy(e,dt){
   if(e.tell>0){e.tell-=dt;if(e.tell<=0)strike(e);return}
   if(e.rush){stepWardenRush(e,dt);return}
   if(e.stun>0)return;
+  const sight=floorSight(floor,e,p);
   if(Math.abs(Math.cos(a))>.15)e.face=Math.cos(a)>0?-1:1;
   const ranged=e.id==="archer"||e.id==="eye";
   const desired=e.id==="archer"?264:e.id==="eye"?203:e.boss?105:e.id==="brute"?85:83;
@@ -751,8 +759,11 @@ function stepEnemy(e,dt){
   walkBody(floor,e,Math.cos(direction)*speed*dt*moving,Math.sin(direction)*speed*dt*moving);
   for(const other of foes){
     if(other===e||other.hp<=0)continue;
-    const gap=dist(e,other), limit=(e.r+other.r)*.88;
-    if(gap>0&&gap<limit){const push=(limit-gap)*dt*9;walkBody(floor,e,(e.x-other.x)*push/gap,(e.y-other.y)*push/gap)}
+    const dx=e.x-other.x,dy=e.y-other.y,gapSquared=dx*dx+dy*dy,limit=(e.r+other.r)*.88;
+    if(gapSquared>0&&gapSquared<limit*limit){
+      const gap=Math.sqrt(gapSquared), push=(limit-gap)*dt*9/gap;
+      walkBody(floor,e,dx*push,dy*push);
+    }
   }
   if(distance<e.r+p.r&&distance>0){const push=(e.r+p.r-distance)*dt*10;walkBody(floor,e,-Math.cos(a)*push,-Math.sin(a)*push)}
 }
@@ -944,9 +955,9 @@ function sprite(frame,x,y,size,face,fallback,tilt=0){
   else drawSpriteSilhouette(frame,size,fallback);
   ctx.restore();
 }
-function paintPaving(pen,img){
+function paintPaving(pen,img,first=0,end=MAZE_ROWS){
   const sample=img?Math.round(img.height*.065):0;
-  for(let y=0;y<MAZE_ROWS;y++)for(let x=0;x<MAZE_COLS;x++){
+  for(let y=first;y<end;y++)for(let x=0;x<MAZE_COLS;x++){
     const k=tileIndex(x,y);
     if(!floor.cells[k])continue;
     const left=x*TILE,top=y*TILE;
@@ -967,7 +978,7 @@ function paintPaving(pen,img){
     pen.fillStyle="#e0c0ae15";pen.fillRect(left+1,top+1,TILE-1,1);
   }
 }
-function blendRoomArt(pen,img,density){
+function* blendRoomArt(pen,img,density){
   if(!img)return;
   for(const node of floor.nodes){
     const x=node.left*TILE,y=node.top*TILE,w=(node.right-node.left)*TILE,h=(node.bottom-node.top)*TILE;
@@ -989,11 +1000,12 @@ function blendRoomArt(pen,img,density){
       if(floor.owners[tileIndex(tx,ty)]===node.number)pen.rect(tx*TILE,ty*TILE,TILE,TILE);
     }
     pen.clip();pen.drawImage(roomMural,x,y,w,h);pen.restore();
+    yield;
   }
   if(touchUI){roomMural.width=1;roomMural.height=1}
 }
-function paintMasonry(pen,color){
-  for(let y=1;y<MAZE_ROWS-1;y++)for(let x=1;x<MAZE_COLS-1;x++){
+function paintMasonry(pen,color,first=1,end=MAZE_ROWS-1){
+  for(let y=first;y<end;y++)for(let x=1;x<MAZE_COLS-1;x++){
     const k=tileIndex(x,y);
     if(floor.cells[k]||floor.features[k]===1||floor.features[k]===2)continue;
     const north=floor.cells[k-MAZE_COLS],south=floor.cells[k+MAZE_COLS],west=floor.cells[k-1],east=floor.cells[k+1];
@@ -1019,7 +1031,7 @@ function paintMasonry(pen,color){
     }
   }
 }
-function paintEntrances(pen,color){
+function* paintEntrances(pen,color){
   for(const entrance of floor.entrances){
     pen.save();pen.translate(entrance.x,entrance.y);pen.rotate(entrance.a);pen.scale(entrance.sign,1);
     const light=pen.createRadialGradient(0,0,18,0,0,145);
@@ -1051,13 +1063,15 @@ function paintEntrances(pen,color){
       pen.fillStyle="#ffdfaa";pen.fillRect(3,post-3,3,6);
     }
     pen.restore();
+    yield;
   }
 }
+let terrainJob=null;
 function invalidateScenery(){
   if(floor)floor.sceneryScale=0;
-  sceneryRetryAt=0;
+  terrainJob=null;sceneryRetryAt=0;
 }
-function paintMaze(img,density){
+function* paintMaze(img,density){
   const width=WORLD_W*density,height=WORLD_H*density;
   if(scenery.width!==width)scenery.width=width;
   if(scenery.height!==height)scenery.height=height;
@@ -1065,12 +1079,28 @@ function paintMaze(img,density){
   if(!pen||pen.isContextLost?.())return false;
   pen.setTransform(density,0,0,density,0,0);
   pen.fillStyle="#100d13";pen.fillRect(0,0,WORLD_W,WORLD_H);
-  paintPaving(pen,img);
-  blendRoomArt(pen,img,density);
-  paintMasonry(pen,color);
-  paintRoomFeatures(pen,floor,stage,color);
-  paintEntrances(pen,color);
+  const rows=touchUI?3:MAZE_ROWS;
+  for(let y=0;y<MAZE_ROWS;y+=rows){paintPaving(pen,img,y,Math.min(y+rows,MAZE_ROWS));yield}
+  yield* blendRoomArt(pen,img,density);
+  for(let y=1;y<MAZE_ROWS-1;y+=rows){paintMasonry(pen,color,y,Math.min(y+rows,MAZE_ROWS-1));yield}
+  for(const node of floor.nodes){paintRoomFeatures(pen,floor,stage,color,[node]);yield}
+  yield* paintEntrances(pen,color);
   return !pen.isContextLost?.();
+}
+function advanceScenery(img,density){
+  if(!terrainJob||terrainJob.img!==img||terrainJob.density!==density){
+    terrainJob={img,density,steps:paintMaze(img,density)};
+    floor.sceneryScale=0;
+  }
+  const deadline=Date.now()+3;
+  let result, slices=0;
+  do{
+    result=terrainJob.steps.next();slices++;
+  }while(!result.done&&(!touchUI||slices<8&&Date.now()<deadline));
+  if(!result.done)return;
+  terrainJob=null;
+  if(result.value){floor.sceneryImage=img;floor.sceneryScale=density}
+  else sceneryRetryAt=Date.now()+750;
 }
 function drawBasicTerrain(){
   ctx.fillStyle="#100d13";ctx.fillRect(camera.x-12,camera.y-12,W+24,H+24);
@@ -1086,14 +1116,13 @@ function drawBasicTerrain(){
 function drawArena(){
   const image=requestArt(arenas[stage]), img=image.complete&&image.naturalWidth?image:null;
   const density=touchUI?MOBILE_TERRAIN_SCALE:1;
-  if(!sceneryLost&&(floor.sceneryImage!==img||floor.sceneryScale!==density)&&Date.now()>=sceneryRetryAt){
+  const pendingTexture=touchUI&&!image.complete;
+  if(!sceneryLost&&!pendingTexture&&(floor.sceneryImage!==img||floor.sceneryScale!==density)&&Date.now()>=sceneryRetryAt){
     try{
-      if(paintMaze(img,density)){floor.sceneryImage=img;floor.sceneryScale=density}
-      else floor.sceneryScale=0;
+      advanceScenery(img,density);
     }catch{
-      floor.sceneryScale=0;
+      terrainJob=null;floor.sceneryScale=0;sceneryRetryAt=Date.now()+750;
     }
-    sceneryRetryAt=floor.sceneryScale?0:Date.now()+750;
   }
   if(!sceneryLost&&floor.sceneryScale===density){
     try{
@@ -1113,7 +1142,7 @@ function drawMist(){
     ctx.fillStyle=vignette;ctx.fillRect(camera.x,camera.y,W,H);
   }
   const falling=stage===4, slow=stage===1||stage===2||stage===5;
-  for(let i=0;i<(touchUI?18:motes.length);i++){
+  for(let i=0;i<(touchUI?slowMobile?6:14:motes.length);i++){
     const m=motes[i];
     const x=camera.x+m.x*W+Math.sin(visualTime*(slow?.42:1)+m.phase)*(falling?33:14);
     const y=camera.y+(H+m.y*H+visualTime*m.speed*(falling?.64:slow?-.28:-1)%H)%H;
@@ -1360,7 +1389,7 @@ function draw(){
   drawThresholds();
   drawWeaponDrops();
   drawMerchant();
-  for(const s of spawns)if(s.at-scene<.7){
+  for(const s of spawns)if(s.at-scene<.7&&(!touchUI||inView(s.x,s.y,70))){
     const f=clamp(1-(s.at-scene)/.7,0,1), c=beasts[s.id].color;
     glow(s.x,s.y,44+22*f,c+"47");circle(s.x,s.y,33*(1-f)+10,c,2);circle(s.x,s.y,16+25*f,c+"7f",1.5);
   }
@@ -1379,10 +1408,15 @@ function draw(){
 }
 function stepEffects(dt){
   shake=Math.max(0,shake-dt*45);flash=Math.max(0,flash-dt*1.65);
-  for(const d of debris){d.x+=d.vx*dt;d.y+=d.vy*dt;d.vx*=Math.pow(.1,dt);d.vy*=Math.pow(.1,dt);d.life-=dt}
+  if(debris.length){
+    const decay=Math.pow(.1,dt);
+    for(const d of debris){d.x+=d.vx*dt;d.y+=d.vy*dt;d.vx*=decay;d.vy*=decay;d.life-=dt}
+    debris=debris.filter(d=>d.life>0);
+  }
   for(const f of fx)f.life-=dt;
   for(const f of floats){f.y-=dt*44;f.life-=dt}
-  debris=debris.filter(d=>d.life>0);fx=fx.filter(f=>f.life>0);floats=floats.filter(f=>f.life>0);
+  if(fx.length)fx=fx.filter(f=>f.life>0);
+  if(floats.length)floats=floats.filter(f=>f.life>0);
 }
 
 const skillButtons=[...document.querySelectorAll(".abilities button")];
@@ -1917,7 +1951,7 @@ window.addEventListener("keydown",e=>{
 window.addEventListener("keyup",e=>keys.delete(e.code));
 window.addEventListener("blur",()=>{if(state==="fight")pause();else resetInput()});
 function redrawSurfaces(){
-  invalidateScenery();last=0;nextMobileDraw=0;
+  invalidateScenery();last=nextMobileDraw=mobileTime=0;
   if(player&&state!=="home"&&!document.hidden)resize();
 }
 canvas.addEventListener("contextlost",()=>{
@@ -1943,18 +1977,37 @@ for(let i=0;i<(touchUI?12:30);i++){
   const m=document.createElement("i");m.className="ember";m.style.cssText=`--x:${between(0,100)}%;--r:${between(1,3)}px;--dx:${between(-70,55)}px;--time:${between(5,12)}s;--delay:${between(-12,0)}s`;$("embers").append(m);
 }
 
+function advanceFight(dt){
+  visualTime=(visualTime+dt)%86400;stepEffects(dt);
+  if(hitStop>0)hitStop-=dt;else tick(dt);
+}
+function trackMobileCadence(dt){
+  if(slowMobile||dt<=0)return;
+  cadenceFrames++;
+  if(dt>.023)lateFrames++;
+  if(cadenceFrames<36)return;
+  slowMobile=lateFrames>=12;
+  cadenceFrames=lateFrames=0;
+  if(slowMobile){resize(false);nextMobileDraw=0}
+}
 function loop(ms){
   requestAnimationFrame(loop);
-  if(document.hidden||fieldLost||!ctx){last=0;return}
-  const dt=last?clamp((ms-last)/1000,0,.033):0;last=ms;
+  if(document.hidden||fieldLost||!ctx||(state!=="fight"&&state!=="descend")){last=mobileTime=0;return}
+  const dt=last?clamp((ms-last)/1000,0,touchUI?MOBILE_STEP*4:.033):0;last=ms;
+  if(touchUI)trackMobileCadence(dt);
   if(state==="fight"){
-    visualTime=(visualTime+dt)%86400;stepEffects(dt);
-    if(hitStop>0)hitStop-=dt;else tick(dt);
-    hudTime-=dt;if(hudTime<=0){hudTime=.078;drawHud()}
-  }else if(state==="descend"){
+    if(touchUI){
+      mobileTime=Math.min(mobileTime+dt,MOBILE_STEP*4);
+      while(mobileTime+1e-6>=MOBILE_STEP&&state==="fight"){
+        mobileTime=Math.max(0,mobileTime-MOBILE_STEP);
+        advanceFight(MOBILE_STEP);
+      }
+    }else advanceFight(dt);
+    hudTime-=dt;if(hudTime<=0){hudTime=touchUI?.1:.078;drawHud()}
+  }else{
     descent.time-=dt;
     if(descent.time<=0){const {path}=descent;descent=null;stage++;enter(path)}
-  }else return;
+  }
   if(!touchUI||ms>=nextMobileDraw-.5){
     nextMobileDraw=Math.max(nextMobileDraw+MOBILE_DRAW_INTERVAL,ms+MOBILE_DRAW_INTERVAL/2);
     draw();
