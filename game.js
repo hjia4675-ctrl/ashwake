@@ -10,7 +10,7 @@ const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const turn = n => Math.atan2(Math.sin(n), Math.cos(n));
 const range = (x, y, a, n) => ({x:x + Math.cos(a)*n, y:y + Math.sin(a)*n});
 const smallMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-let touchUI=matchMedia("(pointer: coarse)").matches;
+let touchUI=matchMedia("(pointer: coarse)").matches, touchRotated=false;
 const DASH_COOLDOWN=2.3;
 const DASH_REDUCTION_CAP=80, DASH_MIN_COOLDOWN=DASH_COOLDOWN*(100-DASH_REDUCTION_CAP)/100;
 const CINDER={targets:3,ticks:4,interval:.45,damage:5};
@@ -180,7 +180,12 @@ let selected=[], previousRelicOffer=[], modalChoices=[], previousFocus, lastActi
 const scrollLockKeys=["Space","ArrowLeft","ArrowRight","ArrowUp","ArrowDown"];
 
 function resize(){
-  const {width,height} = canvas.getBoundingClientRect();
+  const rotated=touchUI&&innerWidth<innerHeight;
+  if(rotated!==touchRotated){
+    touchRotated=rotated;$("app").classList.toggle("touch-rotated",rotated);resetInput();
+  }
+  const box=canvas.getBoundingClientRect();
+  const width=touchRotated?box.height:box.width, height=touchRotated?box.width:box.height;
   if(!width||!height)return;
   const ratio=width/height;
   if(touchUI){
@@ -1586,7 +1591,7 @@ function confirmLeave(){
 function resume(){if(state!=="pause")return;wakeAudio();resetInput();state="fight";closeModal()}
 function showGuide(){
   if(touchUI){
-    wakeAudio();showModal(heading("触屏操作","横屏和竖屏都可以战斗。暂停菜单可交换摇杆位置或放大按键。")+
+    wakeAudio();showModal(heading("触屏操作","游戏以横屏显示。请横着拿手机，暂停菜单可交换摇杆位置或放大按键。")+
       grid([["移动",`在${save.touchLeft?"右":"左"}下方按住并拖动，摇杆会出现在手指附近。`],["普攻","点按自动瞄准，长按连续出招。亮起「接刃」时再点按可触发完美接招。"],["闪步","点按立即朝移动方向闪避。松开摇杆时，沿角色当前朝向闪避。"],["焚印与武技","点按自动选目标。按住技能朝想打的方向拖动，松手释放。拖回起点再松手可取消。"],["丧钟","余烬满 100% 后点按，震击附近敌人。"],["探索","靠近武器、烛台和门时，点出现的交互键。地图和遗物在屏幕上方。"]])+row(btn("dismiss","返回",true)));
     $("dismiss").onclick=closeModal;return;
   }
@@ -1620,8 +1625,16 @@ function releasePointer(element,id){if(id!==null&&element.hasPointerCapture?.(id
 function resetCanvasPointer(){
   const id=pointer.id;pointer.id=null;pointer.down=false;releasePointer(canvas,id);
 }
+function controlDelta(event,x,y){
+  const dx=event.clientX-x, dy=event.clientY-y;
+  return touchRotated?{x:dy,y:-dx}:{x:dx,y:dy};
+}
+function controlPoint(event,box){
+  return controlDelta(event,box.left+(touchRotated?box.width:0),box.top);
+}
 function point(event){
-  const box=canvas.getBoundingClientRect();pointer.x=(event.clientX-box.left-ox)/scale;pointer.y=(event.clientY-box.top-oy)/scale;
+  const local=controlPoint(event,canvas.getBoundingClientRect());
+  pointer.x=(local.x-ox)/scale;pointer.y=(local.y-oy)/scale;
 }
 canvas.addEventListener("pointermove",e=>{if(e.pointerType!=="touch"&&state==="fight")point(e)});
 canvas.addEventListener("pointerdown",e=>{
@@ -1641,7 +1654,7 @@ function resetStick(){
 }
 function moveStick(e){
   if(stick.id!==e.pointerId)return;
-  const dx=e.clientX-stick.startX,dy=e.clientY-stick.startY, distance=Math.hypot(dx,dy);
+  const {x:dx,y:dy}=controlDelta(e,stick.startX,stick.startY), distance=Math.hypot(dx,dy);
   const power=clamp((distance-6)/34,0,1), factor=distance?power/distance:0;
   stick.x=dx*factor;stick.y=dy*factor;
   stickKnob.style.transform=`translate(${stick.x*stick.knobTravel}px,${stick.y*stick.knobTravel}px)`;
@@ -1650,9 +1663,10 @@ movementZone.onpointerdown=e=>{
   if(state!=="fight"||stick.id!==null||e.button>0)return;
   e.preventDefault();wakeAudio();lastAction="touch";
   const area=movementZone.getBoundingClientRect(), radius=pad.getBoundingClientRect().width/2;
+  const origin=controlPoint(e,area), width=touchRotated?area.height:area.width, height=touchRotated?area.width:area.height;
   Object.assign(stick,{id:e.pointerId,startX:e.clientX,startY:e.clientY,knobTravel:radius*.54});
-  pad.style.setProperty("--stick-x",`${clamp(e.clientX-area.left,radius,area.width-radius)}px`);
-  pad.style.setProperty("--stick-y",`${clamp(e.clientY-area.top,radius,area.height-radius)}px`);
+  pad.style.setProperty("--stick-x",`${clamp(origin.x,radius,width-radius)}px`);
+  pad.style.setProperty("--stick-y",`${clamp(origin.y,radius,height-radius)}px`);
   pad.classList.add("is-pressed");movementZone.setPointerCapture(e.pointerId);
 };
 movementZone.onpointermove=moveStick;
@@ -1660,7 +1674,7 @@ for(const type of ["pointerup","pointercancel","lostpointercapture"])movementZon
 
 function updateTouchAim(e){
   if(!touchAim||touchAim.id!==e.pointerId)return;
-  const dx=e.clientX-touchAim.x,dy=e.clientY-touchAim.y, distance=Math.hypot(dx,dy);
+  const {x:dx,y:dy}=controlDelta(e,touchAim.x,touchAim.y), distance=Math.hypot(dx,dy);
   touchAim.angle=distance>=11?Math.atan2(dy,dx):null;
   touchAim.dragged||=touchAim.angle!==null;
   touchAim.strength=clamp((distance-11)/56,0,1);
@@ -1785,4 +1799,4 @@ function loop(ms){
   }
   requestAnimationFrame(loop);
 }
-syncTouchLayout();syncSound();updateBest();requestAnimationFrame(loop);
+syncTouchLayout();resize();syncSound();updateBest();requestAnimationFrame(loop);
