@@ -165,6 +165,7 @@
 .touch-ui.touch-rotated .curtain{position:absolute}
 .touch-ui .panel{padding:clamp(13px,4vmin,24px);touch-action:pan-y;scrollbar-width:thin}
 .touch-ui .panel button{min-height:44px}
+.touch-ui .home button,.touch-ui .panel button{touch-action:manipulation}
 .touch-ui .panel-title{font-size:clamp(24px,6vmin,38px)}
 .touch-ui .route-options,.touch-ui .rewards,.touch-ui .rewards.bonus{grid-template-columns:repeat(3,minmax(0,1fr))}
 .touch-ui .floor-map{height:clamp(145px,calc(var(--view-height) * .46),336px)}
@@ -209,6 +210,19 @@
 .touch-ui .merchant-panel .merchant-schools button{min-width:0;padding:3px 6px;font-size:12px;white-space:nowrap}
 .touch-ui .merchant-panel .button-row{grid-area:1/2/3/3;align-self:start;justify-content:flex-end;gap:6px}
 .touch-ui .merchant-panel .button-row button{min-height:44px;padding:4px 12px}
+.touch-ui .relic-choice-panel{
+  display:flex;flex-direction:column;gap:8px;width:min(100%,810px);min-height:0;overflow:hidden;padding:12px 14px
+}
+.touch-ui .relic-choice-panel > :not(.choices){flex:none;margin:0}
+.touch-ui .relic-choice-panel > .choices{
+  grid-auto-rows:max-content;align-content:start;min-height:0;gap:7px;padding:2px 3px 4px;
+  overflow:auto;overscroll-behavior:contain;touch-action:pan-y;scrollbar-color:#b1826c #251923
+}
+.touch-ui.touch-rotated .relic-choice-panel > .choices{touch-action:none}
+.touch-ui .relic-choice-panel .card{min-width:0;min-height:44px;padding:8px 10px;gap:4px;transform:none;overflow-wrap:anywhere}
+.touch-ui .relic-choice-panel .card .icon{display:none}
+.touch-ui .relic-choice-panel .card b{font-size:14px}
+.touch-ui .relic-choice-panel .card small{font-size:12px;line-height:1.4}
 .touch-options{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
 .touch-ui button:focus:not(:focus-visible){outline:none}
 .hero{background-image:image-set(url('cover.webp') type('image/webp'),url('cover.jpg') type('image/jpeg'))}

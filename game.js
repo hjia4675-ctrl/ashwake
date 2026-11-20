@@ -35,7 +35,7 @@ const arenas = ["arena", "arena-2", "arena-3", "arena-4", "arena-5", "arena-6", 
 const art = {};
 function requestArt(name,priority="auto",retry=false){
   if(art[name]&&!retry)return art[name];
-  const source=name==="sprites"?"sprites.webp":name+".jpg";
+  const source=name==="sprites"?"sprites.webp":name===arenas[0]&&touchUI?"arena-entry.webp":name+".jpg";
   const url = source;
   const img=new Image();img.fetchPriority=priority;
   art[name]=img;
@@ -178,6 +178,7 @@ function sfx(name,after=0){
 let state="home", W=1120,H=630, scale=1, dpr=1, ox=0, oy=0, last=0, visualTime=0, hudTime=0;
 let fieldLost=false, nextMobileDraw=0, mobileTime=0, slowMobile=false, cadenceFrames=0, lateFrames=0;
 const MOBILE_STEP=1/60, MOBILE_TERRAIN_SCALE=.5, MOBILE_DRAW_INTERVAL=1000/60;
+let preparedEntry=null, entryTextureDeadline=0, entryStartDeadline=0;
 let relicInventoryReturn="fight";
 let player, stage=0, route="standard", kills=0, cleared=0, elapsed=0, acquired=[], foes=[], shots=[], orbs=[], debris=[], fx=[], floats=[], spawns=[], scene=0, bannerTimer=0, shake=0, hitStop=0, flash=0;
 let floor, chamber, nearby, descent, pulse=null, nextPulse=0, pulseIndex=0;
@@ -209,7 +210,10 @@ function resize(paint=true){
   if(canvas.width!==pixelsWide)canvas.width=pixelsWide;
   if(canvas.height!==pixelsHigh)canvas.height=pixelsHigh;
   scale=Math.min(width/W,height/H);ox=(width-W*scale)*.5;oy=(height-H*scale)*.5;
-  if(player&&state!=="home"){followCamera();if(paint)draw()}
+  if(player&&state!=="home"){
+    followCamera();
+    if(paint&&!(state==="end"&&entryStartDeadline))draw();
+  }
 }
 function followCamera(dt=0){
   const blend=dt?1-Math.exp(-dt*10):1;
@@ -242,17 +246,17 @@ function spawn(id,x,y,elite=false,homeRoom=chamber){
   foes.push(e);save.unlocked[id]=true;
   fx.push({type:"ring",x,y,r:def.r*1.6,life:.55,max:.55,color:def.color});
 }
-function buildFloor(){
-  const def=rooms[stage], boss=def.length===2, deckSource=boss?rooms[stage-1]:def;
-  const deck=[deckSource[1+Math.floor(Math.random()*(deckSource.length-1))],...reinforcements[stage]].join(" ").split(" ");
+function buildFloor(level=stage,path=route){
+  const def=rooms[level], boss=def.length===2, deckSource=boss?rooms[level-1]:def;
+  const deck=[deckSource[1+Math.floor(Math.random()*(deckSource.length-1))],...reinforcements[level]].join(" ").split(" ");
   const map=mazeLayout(boss);
   const details=["entry","gate","valve","coil","ring"];
   if(Math.random()<.5)[details[2],details[3]]=[details[3],details[2]];
   const bossCount=boss?1:0, roomCount=map.nodes.length-bossCount;
-  const mobCount=FLOOR_ENEMY_TOTALS[stage]-bossCount;
+  const mobCount=FLOOR_ENEMY_TOTALS[level]-bossCount;
   const perRoom=Math.floor(mobCount/roomCount), remainder=mobCount%roomCount;
   const combatRooms=map.nodes.filter(node=>!boss||node.number!==1);
-  if(route==="elite"){
+  if(path==="elite"){
     const hasElite=node=>Number(Boolean(ELITE_ROOMS[details[node.number]]));
     combatRooms.sort((a,b)=>hasElite(a)-hasElite(b));
   }
@@ -265,9 +269,9 @@ function buildFloor(){
     const codes=bossRoom?[def[1]]:Array.from({length:count},()=>deck[offset++%deck.length]);
     if(!bossRoom){
       if(!codes.some(code=>code==="h"||code==="b"))codes[0]="h";
-      if(stage>0&&!codes.some(code=>code==="a"||code==="o"))codes[count-1]=stage>=4?"o":"a";
+      if(level>0&&!codes.some(code=>code==="a"||code==="o"))codes[count-1]=level>=4?"o":"a";
     }
-    const cache=kind==="coil"||(stage>=3&&kind==="valve");
+    const cache=kind==="coil"||(level>=3&&kind==="valve");
     Object.assign(node,{kind,cache,lineup:codes.join(" "),visited:false,done:false,claimed:false,pending:0});
   }
   const gate=map.nodes[1];
@@ -275,7 +279,7 @@ function buildFloor(){
   map.tribute=null;map.elitesDefeated=0;
   map.merchant=rollMerchant(map);
   map.pedestal={x:gate.x,y:gate.y+70};
-  const options=stage===6?["standard"]:Object.keys(routes);
+  const options=level===6?["standard"]:Object.keys(routes);
   map.arches=options.map((path,i)=>({path,x:gate.x+(i-(options.length-1)/2)*126,y:gate.top*TILE+48}));
   return map;
 }
@@ -283,7 +287,7 @@ function entrySupply(path){
   const rules=routes[path];
   return {hp:rules.heal+player.roomHeal,ash:rules.entryAsh??0};
 }
-function enter(name){
+function enter(name,prepared=null){
   route=name;
   const arena=arenas[stage];
   if(touchUI)for(const name of arenas)if(name!==arena)delete art[name];
@@ -293,7 +297,9 @@ function enter(name){
     player.hp=Math.min(player.maxHp,player.hp+supply.hp);
     player.ash=Math.min(100,player.ash+supply.ash);
   }
-  floor=buildFloor();invalidateScenery();chamber=null;nearby=null;
+  floor=prepared??buildFloor();
+  if(!prepared)invalidateScenery();
+  chamber=null;nearby=null;
   state="fight";scene=0;closeModal();resetInput();
   foes=[];shots=[];orbs=[];spawns=[];debris=[];fx=[];floats=[];weaponBolts=[];weaponFields=[];weaponTraces=[];flash=0;shake=0;hitStop=0;
   const origin=floor.nodes[0];
@@ -360,16 +366,20 @@ function discover(){
     announce(chamberName(node),note+(floor.merchant?.node===node?" · 收钟人在此，肃清后可交易":""),1.65);
   }
 }
-function begin(){
+function begin(prepared=null){
+  preparedEntry=null;entryTextureDeadline=entryStartDeadline=0;
+  $("startLabel").textContent="开始远征";$("start").setAttribute("aria-busy","false");
   if(art.sprites?.complete&&!art.sprites.naturalWidth)requestArt("sprites","high",true);
   wakeAudio(); $("home").hidden=true;$("game").hidden=false;
   slowMobile=false;cadenceFrames=lateFrames=mobileTime=nextMobileDraw=last=0;
   resize(false);
-  stage=0;kills=0;cleared=0;elapsed=0;acquired=[];previousRelicOffer=[];lastAction="";player=makePlayer();enter("standard");
+  stage=0;kills=0;cleared=0;elapsed=0;acquired=[];previousRelicOffer=[];lastAction="";player=makePlayer();enter("standard",prepared);
+  if(touchUI)draw();
   $("pause").focus({preventScroll:true});$("pause").blur();
 }
 function home(){
   state="home";resetInput();closeModal();$("game").hidden=true;$("home").hidden=false;
+  preparedEntry=null;entryTextureDeadline=entryStartDeadline=0;
   if(touchUI){
     canvas.width=canvas.height=scenery.width=scenery.height=1;
     if(floor){floor.sceneryImage=null;invalidateScenery()}
@@ -915,6 +925,9 @@ const spriteSilhouettes=new Map([
 ]);
 const scenery=document.createElement("canvas");
 const roomMural=document.createElement("canvas");
+const glowSheet=document.createElement("canvas"), glowStamps=new Map();
+const GLOW_SIZE=48, GLOW_COLUMNS=6, GLOW_CAPACITY=GLOW_COLUMNS*GLOW_COLUMNS;
+let glowPen;
 let sceneryRetryAt=0, sceneryLost=false;
 const stoneColors=["#30272c","#28313e","#29382f","#3a2a2a","#35404c","#352b43","#392730"];
 function inView(x,y,margin=128){
@@ -922,7 +935,46 @@ function inView(x,y,margin=128){
 }
 function oval(x,y,rx,ry,color){ctx.fillStyle=color;ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,TAU);ctx.fill()}
 function circle(x,y,r,color,width=1){ctx.beginPath();ctx.arc(x,y,r,0,TAU);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke()}
-function glow(x,y,r,color){const g=ctx.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,color);g.addColorStop(1,"transparent");ctx.fillStyle=g;ctx.fillRect(x-r,y-r,r*2,r*2)}
+function glowStamp(color){
+  if(!glowPen){
+    glowSheet.width=glowSheet.height=GLOW_SIZE*GLOW_COLUMNS;
+    glowPen=glowSheet.getContext("2d");
+  }
+  if(!glowPen||glowPen.isContextLost?.())return null;
+  const cached=glowStamps.get(color);
+  if(cached)return cached;
+  let slot=glowStamps.size;
+  if(slot===GLOW_CAPACITY){
+    const oldest=glowStamps.keys().next().value;
+    slot=glowStamps.get(oldest).slot;glowStamps.delete(oldest);
+  }
+  const x=slot%GLOW_COLUMNS*GLOW_SIZE,y=Math.floor(slot/GLOW_COLUMNS)*GLOW_SIZE, half=GLOW_SIZE/2;
+  const fade=glowPen.createRadialGradient(x+half,y+half,0,x+half,y+half,half);
+  fade.addColorStop(0,color);fade.addColorStop(1,color+"00");
+  glowPen.clearRect(x,y,GLOW_SIZE,GLOW_SIZE);glowPen.fillStyle=fade;glowPen.fillRect(x,y,GLOW_SIZE,GLOW_SIZE);
+  const stamp={x,y,slot};glowStamps.set(color,stamp);
+  return stamp;
+}
+function glow(x,y,r,color){
+  if(touchUI){
+    if(!inView(x,y,r))return;
+    const stamp=color[0]==="#"&&color.length>=7?glowStamp(color.slice(0,7)):null;
+    if(stamp){
+      const alpha=ctx.globalAlpha;
+      ctx.globalAlpha=alpha*(color.length===9?parseInt(color.slice(7),16)/255:1);
+      try{
+        ctx.drawImage(glowSheet,stamp.x,stamp.y,GLOW_SIZE,GLOW_SIZE,x-r,y-r,r*2,r*2);
+        return;
+      }catch{
+        glowStamps.clear();
+      }finally{
+        ctx.globalAlpha=alpha;
+      }
+    }
+  }
+  const g=ctx.createRadialGradient(x,y,0,x,y,r);
+  g.addColorStop(0,color);g.addColorStop(1,"transparent");ctx.fillStyle=g;ctx.fillRect(x-r,y-r,r*2,r*2);
+}
 function line(x,y,tx,ty,color,width){ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(tx,ty);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke()}
 function spriteImage(){
   const img=art.sprites;
@@ -955,13 +1007,13 @@ function sprite(frame,x,y,size,face,fallback,tilt=0){
   else drawSpriteSilhouette(frame,size,fallback);
   ctx.restore();
 }
-function paintPaving(pen,img,first=0,end=MAZE_ROWS){
+function paintPaving(pen,map,level,img,first=0,end=MAZE_ROWS){
   const sample=img?Math.round(img.height*.065):0;
   for(let y=first;y<end;y++)for(let x=0;x<MAZE_COLS;x++){
     const k=tileIndex(x,y);
-    if(!floor.cells[k])continue;
+    if(!map.cells[k])continue;
     const left=x*TILE,top=y*TILE;
-    pen.fillStyle=stoneColors[stage];
+    pen.fillStyle=stoneColors[level];
     pen.fillRect(left,top,TILE,TILE);
     if(img){
       const sx=img.width*.39+(x%4)*sample,sy=img.height*.42+(y%4)*sample;
@@ -978,9 +1030,9 @@ function paintPaving(pen,img,first=0,end=MAZE_ROWS){
     pen.fillStyle="#e0c0ae15";pen.fillRect(left+1,top+1,TILE-1,1);
   }
 }
-function* blendRoomArt(pen,img,density){
+function* blendRoomArt(pen,map,img,density){
   if(!img)return;
-  for(const node of floor.nodes){
+  for(const node of map.nodes){
     const x=node.left*TILE,y=node.top*TILE,w=(node.right-node.left)*TILE,h=(node.bottom-node.top)*TILE;
     roomMural.width=Math.ceil(w*density);roomMural.height=Math.ceil(h*density);
     const ink=roomMural.getContext("2d");
@@ -997,22 +1049,22 @@ function* blendRoomArt(pen,img,density){
     ink.restore();
     pen.save();pen.beginPath();
     for(let ty=node.top;ty<node.bottom;ty++)for(let tx=node.left;tx<node.right;tx++){
-      if(floor.owners[tileIndex(tx,ty)]===node.number)pen.rect(tx*TILE,ty*TILE,TILE,TILE);
+      if(map.owners[tileIndex(tx,ty)]===node.number)pen.rect(tx*TILE,ty*TILE,TILE,TILE);
     }
     pen.clip();pen.drawImage(roomMural,x,y,w,h);pen.restore();
     yield;
   }
   if(touchUI){roomMural.width=1;roomMural.height=1}
 }
-function paintMasonry(pen,color,first=1,end=MAZE_ROWS-1){
+function paintMasonry(pen,map,level,color,first=1,end=MAZE_ROWS-1){
   for(let y=first;y<end;y++)for(let x=1;x<MAZE_COLS-1;x++){
     const k=tileIndex(x,y);
-    if(floor.cells[k]||floor.features[k]===1||floor.features[k]===2)continue;
-    const north=floor.cells[k-MAZE_COLS],south=floor.cells[k+MAZE_COLS],west=floor.cells[k-1],east=floor.cells[k+1];
+    if(map.cells[k]||map.features[k]===1||map.features[k]===2)continue;
+    const north=map.cells[k-MAZE_COLS],south=map.cells[k+MAZE_COLS],west=map.cells[k-1],east=map.cells[k+1];
     if(!north&&!south&&!west&&!east)continue;
     const left=x*TILE,top=y*TILE;
     pen.fillStyle=south?"#3b313a":"#29242f";pen.fillRect(left,top,TILE,TILE);
-    pen.fillStyle=stoneColors[stage]+"80";pen.fillRect(left,top,TILE,TILE);
+    pen.fillStyle=stoneColors[level]+"80";pen.fillRect(left,top,TILE,TILE);
     pen.fillStyle="#54444b";pen.fillRect(left+2,top+3,TILE-4,2);
     pen.strokeStyle="#1a141d";pen.lineWidth=1.5;pen.strokeRect(left+1,top+1,TILE-2,TILE-2);
     pen.beginPath();pen.moveTo(left,top+30);pen.lineTo(left+TILE,top+30);pen.moveTo(left+34,top+30);pen.lineTo(left+34,top+TILE);pen.stroke();
@@ -1031,8 +1083,8 @@ function paintMasonry(pen,color,first=1,end=MAZE_ROWS-1){
     }
   }
 }
-function* paintEntrances(pen,color){
-  for(const entrance of floor.entrances){
+function* paintEntrances(pen,map,color){
+  for(const entrance of map.entrances){
     pen.save();pen.translate(entrance.x,entrance.y);pen.rotate(entrance.a);pen.scale(entrance.sign,1);
     const light=pen.createRadialGradient(0,0,18,0,0,145);
     light.addColorStop(0,color+"34");light.addColorStop(.65,color+"15");light.addColorStop(1,color+"00");
@@ -1069,28 +1121,29 @@ function* paintEntrances(pen,color){
 let terrainJob=null;
 function invalidateScenery(){
   if(floor)floor.sceneryScale=0;
+  if(preparedEntry)preparedEntry.sceneryScale=0;
   terrainJob=null;sceneryRetryAt=0;
 }
-function* paintMaze(img,density){
+function* paintMaze(map,level,img,density){
   const width=WORLD_W*density,height=WORLD_H*density;
   if(scenery.width!==width)scenery.width=width;
   if(scenery.height!==height)scenery.height=height;
-  const pen=scenery.getContext("2d",{alpha:false}), color=spiritColors[stage];
+  const pen=scenery.getContext("2d",{alpha:false}), color=spiritColors[level];
   if(!pen||pen.isContextLost?.())return false;
   pen.setTransform(density,0,0,density,0,0);
   pen.fillStyle="#100d13";pen.fillRect(0,0,WORLD_W,WORLD_H);
   const rows=touchUI?3:MAZE_ROWS;
-  for(let y=0;y<MAZE_ROWS;y+=rows){paintPaving(pen,img,y,Math.min(y+rows,MAZE_ROWS));yield}
-  yield* blendRoomArt(pen,img,density);
-  for(let y=1;y<MAZE_ROWS-1;y+=rows){paintMasonry(pen,color,y,Math.min(y+rows,MAZE_ROWS-1));yield}
-  for(const node of floor.nodes){paintRoomFeatures(pen,floor,stage,color,[node]);yield}
-  yield* paintEntrances(pen,color);
+  for(let y=0;y<MAZE_ROWS;y+=rows){paintPaving(pen,map,level,img,y,Math.min(y+rows,MAZE_ROWS));yield}
+  yield* blendRoomArt(pen,map,img,density);
+  for(let y=1;y<MAZE_ROWS-1;y+=rows){paintMasonry(pen,map,level,color,y,Math.min(y+rows,MAZE_ROWS-1));yield}
+  for(const node of map.nodes){paintRoomFeatures(pen,map,level,color,[node]);yield}
+  yield* paintEntrances(pen,map,color);
   return !pen.isContextLost?.();
 }
-function advanceScenery(img,density){
-  if(!terrainJob||terrainJob.img!==img||terrainJob.density!==density){
-    terrainJob={img,density,steps:paintMaze(img,density)};
-    floor.sceneryScale=0;
+function advanceScenery(map,level,img,density){
+  if(!terrainJob||terrainJob.map!==map||terrainJob.img!==img||terrainJob.density!==density){
+    terrainJob={map,img,density,steps:paintMaze(map,level,img,density)};
+    map.sceneryScale=0;
   }
   const deadline=Date.now()+3;
   let result, slices=0;
@@ -1099,8 +1152,43 @@ function advanceScenery(img,density){
   }while(!result.done&&(!touchUI||slices<8&&Date.now()<deadline));
   if(!result.done)return;
   terrainJob=null;
-  if(result.value){floor.sceneryImage=img;floor.sceneryScale=density}
+  if(result.value){map.sceneryImage=img;map.sceneryScale=density}
   else sceneryRetryAt=Date.now()+750;
+}
+function prepareScenery(map,level,img,density){
+  if(sceneryLost||(map.sceneryScale===density&&map.sceneryImage===img)||Date.now()<sceneryRetryAt)return;
+  try{
+    advanceScenery(map,level,img,density);
+  }catch{
+    terrainJob=null;map.sceneryScale=0;sceneryRetryAt=Date.now()+750;
+  }
+}
+function prepareEntry(){
+  const now=Date.now(), image=requestArt(arenas[0],"high");
+  if(!preparedEntry){
+    if(!entryTextureDeadline)entryTextureDeadline=now+450;
+    if(!image.complete&&now<entryTextureDeadline)return;
+    preparedEntry=buildFloor(0,"standard");
+    preparedEntry.entryArt=image.complete&&image.naturalWidth?image:null;
+  }else if(!entryStartDeadline&&!preparedEntry.entryArt&&image.complete&&image.naturalWidth){
+    preparedEntry.entryArt=image;
+  }
+  prepareScenery(preparedEntry,0,preparedEntry.entryArt,MOBILE_TERRAIN_SCALE);
+  if(entryStartDeadline&&(preparedEntry.sceneryScale===MOBILE_TERRAIN_SCALE||now>=entryStartDeadline)){
+    begin(preparedEntry);
+  }
+}
+function startExpedition(){
+  if(!touchUI){begin();return}
+  wakeAudio();
+  if(preparedEntry?.sceneryScale===MOBILE_TERRAIN_SCALE){begin(preparedEntry);return}
+  if(entryStartDeadline)return;
+  const now=Date.now();
+  entryTextureDeadline=Math.min(entryTextureDeadline||Infinity,now+110);
+  entryStartDeadline=now+680;
+  const label=state==="end"?$("again"):$("startLabel");
+  label.textContent="正在准备地牢…";
+  (state==="end"?label:$("start")).setAttribute("aria-busy","true");
 }
 function drawBasicTerrain(){
   ctx.fillStyle="#100d13";ctx.fillRect(camera.x-12,camera.y-12,W+24,H+24);
@@ -1114,16 +1202,9 @@ function drawBasicTerrain(){
   }
 }
 function drawArena(){
-  const image=requestArt(arenas[stage]), img=image.complete&&image.naturalWidth?image:null;
+  const image=requestArt(arenas[stage]), img=floor.entryArt!==undefined?floor.entryArt:image.complete&&image.naturalWidth?image:null;
   const density=touchUI?MOBILE_TERRAIN_SCALE:1;
-  const pendingTexture=touchUI&&!image.complete;
-  if(!sceneryLost&&!pendingTexture&&(floor.sceneryImage!==img||floor.sceneryScale!==density)&&Date.now()>=sceneryRetryAt){
-    try{
-      advanceScenery(img,density);
-    }catch{
-      terrainJob=null;floor.sceneryScale=0;sceneryRetryAt=Date.now()+750;
-    }
-  }
+  if(floor.entryArt!==undefined||!touchUI||image.complete)prepareScenery(floor,stage,img,density);
   if(!sceneryLost&&floor.sceneryScale===density){
     try{
       ctx.drawImage(scenery,camera.x*density,camera.y*density,W*density,H*density,camera.x,camera.y,W,H);
@@ -1401,7 +1482,7 @@ function draw(){
   drawWeaponCombat();
   drawEffects();
   drawMist();
-  const fade=descent&&state==="descend"?1-descent.time/.36:Math.max(0,1-scene/.48);
+  const fade=descent&&state==="descend"?1-descent.time/.36:touchUI&&stage===0?0:Math.max(0,1-scene/.48);
   if(fade>0){ctx.fillStyle=`rgba(9,7,13,${clamp(fade,0,1)})`;ctx.fillRect(camera.x,camera.y,W,H)}
   if(flash>0&&!smallMotion){const g=ctx.createRadialGradient(player.x,player.y,H*.23,player.x,player.y,H*.68);g.addColorStop(0,"#e5263900");g.addColorStop(1,`rgba(196,24,48,${flash*.9})`);ctx.fillStyle=g;ctx.fillRect(camera.x,camera.y,W,H)}
   ctx.restore();
@@ -1464,11 +1545,12 @@ function drawHud(){
 
 function showModal(body, choices=[]){
   if($("curtain").hidden)previousFocus=document.activeElement;
-  const panel=$("panel"), touchMerchant=touchUI&&state==="merchant";
-  panel.classList.toggle("merchant-panel",touchMerchant);
+  const panel=$("panel");
+  panel.classList.toggle("merchant-panel",touchUI&&state==="merchant");
+  panel.classList.toggle("relic-choice-panel",touchUI&&(state==="reward"||state==="tribute"));
   modalChoices=choices;panel.innerHTML=body;$("curtain").hidden=false;
   $("home").inert=true;$("game").inert=true;
-  if(touchMerchant){
+  if(touchUI){
     panel.scrollTop=0;
     panel.querySelector("button:not(:disabled)")?.focus({preventScroll:true});
   }else panel.querySelector("button")?.focus();
@@ -1672,7 +1754,8 @@ function showRelicChoice(bonus=false){
     return;
   }
   selected=offerRelics(5);previousRelicOffer=selected;
-  showModal(heading("余烬遗物",`已通过第 ${cleared} 重试炼 · 选择一件。${RELIC_STACK_NOTE}`)+cards(selected,"rewards"),selected.map((_,i)=>()=>chooseRelic(i)));
+  const note=`已通过第 ${cleared} 重试炼 · 选择一件。`;
+  showModal(heading("余烬遗物",note+(touchUI?"":RELIC_STACK_NOTE))+cards(selected,"rewards"),selected.map((_,i)=>()=>chooseRelic(i)));
 }
 function chooseRelic(i){
   const bonus=state==="tribute";
@@ -1701,7 +1784,7 @@ function finish(win){
   showModal(heading(win?"钟响，长夜消散":"余烬熄灭",win?"永夜钟主已倒下。拂晓自钟楼升起。":"钟声尚未响起。下一次远征将重新抽取敌群与遗物。")+
     grid([["试炼进度",`${cleared} / 7`],["击败敌人",kills],["战斗时长",time],["收集遗物",acquired.length]])+
     (acquired.length?`<p class="muted">${[...new Set(acquired)].map(relicTitle).join(" · ")}</p>`:"")+row(btn("again","再度远征",true),btn("return","返回主界面")));
-  $("again").onclick=begin;$("return").onclick=home;
+  $("again").onclick=startExpedition;$("return").onclick=home;
 }
 function pause(){
   if(state!=="fight")return;
@@ -1860,59 +1943,35 @@ for(const b of skillButtons){
 document.addEventListener("pointerdown",e=>{
   if(e.pointerType==="touch"&&!touchUI){touchUI=true;syncTouchLayout();resize();if(player&&state!=="home")drawHud()}
 },true);
-function supportTouchTaps(region,selector="button",useFallback=()=>true){
-  const active=new Map(), handled=new WeakMap();
-  region.addEventListener("pointerdown",e=>{
-    if(e.pointerType!=="touch")return;
-    const button=e.target.closest(selector);
-    if(button&&!button.disabled&&useFallback(button))active.set(e.pointerId,{button,x:e.clientX,y:e.clientY});
-  });
-  region.addEventListener("pointermove",e=>{
-    const tap=active.get(e.pointerId);
-    if(tap&&Math.hypot(e.clientX-tap.x,e.clientY-tap.y)>12)active.delete(e.pointerId);
-  });
-  region.addEventListener("pointercancel",e=>active.delete(e.pointerId));
-  region.addEventListener("pointerup",e=>{
-    const tap=active.get(e.pointerId);active.delete(e.pointerId);
-    if(!tap||tap.button.disabled||!tap.button.contains(document.elementFromPoint(e.clientX,e.clientY)))return;
-    handled.set(tap.button,Date.now()+450);tap.button.click();
-  });
-  region.addEventListener("click",e=>{
-    if(e.detail>0&&Date.now()<(handled.get(e.target.closest(selector))??0)){
-      e.preventDefault();e.stopImmediatePropagation();
-    }
-  },true);
-}
-supportTouchTaps($("home"));
-// A shop tap can replace the button under the finger before the browser dispatches its click.
-supportTouchTaps($("game"),"#pause, #mapButton, #relicButton, #interact",button=>button.id!=="interact"||nearby?.type!=="merchant");
 const modalPanel=$("panel");
-supportTouchTaps(modalPanel,"button",()=>state!=="merchant");
-let shopSwipe=null, shopSwiped=false;
+let choiceSwipe=null, choiceSwiped=false;
 modalPanel.addEventListener("pointerdown",e=>{
-  if(shopSwipe)return;
-  shopSwiped=false;
-  if(e.pointerType!=="touch"||!touchRotated||state!=="merchant")return;
-  const items=e.target.closest(".choices");
+  if(choiceSwipe?.items.isConnected)return;
+  choiceSwipe=null;choiceSwiped=false;
+  if(e.pointerType!=="touch"||!touchRotated)return;
+  const items=e.target.closest(".merchant-panel > .choices, .relic-choice-panel > .choices");
   if(items&&items.scrollHeight>items.clientHeight){
-    shopSwipe={id:e.pointerId,items,x:e.clientX,y:e.clientY,top:items.scrollTop};
+    choiceSwipe={id:e.pointerId,items,x:e.clientX,y:e.clientY,top:items.scrollTop};
   }
 });
 modalPanel.addEventListener("pointermove",e=>{
-  if(shopSwipe?.id!==e.pointerId)return;
-  const {x,y}=controlDelta(e,shopSwipe.x,shopSwipe.y);
-  if(!shopSwiped){
+  if(choiceSwipe?.id!==e.pointerId||!choiceSwipe.items.isConnected)return;
+  const {x,y}=controlDelta(e,choiceSwipe.x,choiceSwipe.y);
+  if(!choiceSwiped){
     if(Math.abs(y)<9||Math.abs(y)<Math.abs(x))return;
-    shopSwiped=true;
-    shopSwipe.items.setPointerCapture(e.pointerId);
+    choiceSwiped=true;
+    choiceSwipe.items.setPointerCapture(e.pointerId);
   }
-  shopSwipe.items.scrollTop=shopSwipe.top-y;
+  choiceSwipe.items.scrollTop=choiceSwipe.top-y;
 });
 for(const type of ["pointerup","pointercancel"]){
-  modalPanel.addEventListener(type,e=>{if(shopSwipe?.id===e.pointerId)shopSwipe=null});
+  modalPanel.addEventListener(type,e=>{if(choiceSwipe?.id===e.pointerId)choiceSwipe=null});
 }
 modalPanel.addEventListener("click",e=>{
-  if(shopSwiped&&e.detail>0){shopSwiped=false;return}
+  if(!choiceSwiped||e.detail===0)return;
+  choiceSwiped=false;e.preventDefault();e.stopImmediatePropagation();
+},true);
+modalPanel.addEventListener("click",e=>{
   const button=e.target.closest("[data-pick]");if(button)modalChoices[Number(button.dataset.pick)]?.();
 });
 window.addEventListener("keydown",e=>{
@@ -1961,6 +2020,7 @@ canvas.addEventListener("contextlost",()=>{
 canvas.addEventListener("contextrestored",()=>{fieldLost=false;redrawSurfaces()});
 scenery.addEventListener("contextlost",()=>{sceneryLost=true;invalidateScenery()});
 scenery.addEventListener("contextrestored",()=>{sceneryLost=false;redrawSurfaces()});
+glowSheet.addEventListener("contextrestored",()=>glowStamps.clear());
 document.addEventListener("visibilitychange",()=>{
   if(document.hidden){
     if(state==="fight")pause();
@@ -1992,6 +2052,7 @@ function trackMobileCadence(dt){
 }
 function loop(ms){
   requestAnimationFrame(loop);
+  if(touchUI&&(state==="home"||state==="end"&&entryStartDeadline)&&!document.hidden&&ctx)prepareEntry();
   if(document.hidden||fieldLost||!ctx||(state!=="fight"&&state!=="descend")){last=mobileTime=0;return}
   const dt=last?clamp((ms-last)/1000,0,touchUI?MOBILE_STEP*4:.033):0;last=ms;
   if(touchUI)trackMobileCadence(dt);
@@ -2015,6 +2076,7 @@ function loop(ms){
 }
 syncTouchLayout();resize();syncSound();updateBest();
 requestArt("sprites","high");
-$("start").onclick=begin;$("start").disabled=false;$("start").setAttribute("aria-busy","false");
+if(touchUI)requestArt(arenas[0],"high");
+$("start").onclick=startExpedition;$("start").disabled=false;$("start").setAttribute("aria-busy","false");
 $("startLabel").textContent="开始远征";$("startStatus").hidden=true;
 requestAnimationFrame(loop);
