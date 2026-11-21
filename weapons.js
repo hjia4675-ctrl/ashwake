@@ -18,6 +18,8 @@ const weaponBook={
 };
 const weaponIds=Object.keys(weaponBook);
 const activeWeapon=()=>weaponBook[player.weapons[player.weaponSlot]];
+const WEAPON_SKILL_GROWTH=7;
+const weaponSkillScale=(level=stage)=>(1+WEAPON_SKILL_GROWTH/100)**level;
 const DROP_CHANCE=.05;
 const ARMORY_OFFER_COUNT=3;
 let weaponBolts=[], weaponFields=[], weaponTraces=[];
@@ -38,7 +40,7 @@ function weaponHit(cast,e,damage,a,force=.58){
   if(addEdge){if(!cast.edgeHits)triggerDashEdge(player);cast.edgeHits++}
   const charge=first&&cast.charged<2;
   if(charge)cast.charged++;
-  hurt(e,damage+(addEdge?cast.edgeDamage:0),a,force,false,charge);
+  hurt(e,damage*(cast.damageScale??1)+(addEdge?cast.edgeDamage:0),a,force,false,charge);
   playImpact(cast.impact,e);
   if(first&&cast.basic&&cast.burned<CINDER.targets&&ignite(e))cast.burned++;
   if(first&&cast.perfect&&!cast.perfectPaid){
@@ -48,7 +50,7 @@ function weaponHit(cast,e,damage,a,force=.58){
 }
 function makeWeaponCast(weapon,basic=false,perfect=false,impact=null){
   return {color:weapon.color,hits:new Map(),charged:0,basic,burned:0,perfect,edge:basic&&player.edge>0?player.edgeSerial:null,
-    edgeDamage:DASH_EDGE.damage*player.dashEdge,edgeHits:0,impact};
+    edgeDamage:DASH_EDGE.damage*player.dashEdge,edgeHits:0,impact,damageScale:basic?1:weaponSkillScale()};
 }
 function traceWeapon(origin,a,shape,r,color,extra={}){
   weaponTraces.push({x:origin.x,y:origin.y,a,shape,r,color,time:.28,max:.28,...extra});
@@ -278,9 +280,13 @@ function dropWeapon(e,random=Math.random){
   floor.loot.push({...point,id});
   label(point.x,point.y-36,weaponBook[id].name,weaponBook[id].color);
 }
+function weaponSkillDetail(weapon){
+  const percent=Number((weaponSkillScale()*100).toFixed(1));
+  return `${weapon.detail} 以上为首层数值，本层伤害为首层的 ${percent}%。`;
+}
 function weaponCard(id,index,disabled=false){
   const w=weaponBook[id];
-  return `<button class="card armament" style="--metal:${w.color}" data-pick="${index}"${disabled?" disabled":""}><span class="icon" aria-hidden="true">${w.icon}</span><kbd>${index+1}</kbd><b>${w.name}</b><span class="school">${w.role}</span><small><strong>普攻 · ${w.moves.map(move=>move.damage).join(" / ")}</strong> ${w.basic}</small><small><strong>${w.skill} · ${w.cd} 秒</strong> ${w.detail}</small></button>`;
+  return `<button class="card armament" style="--metal:${w.color}" data-pick="${index}"${disabled?" disabled":""}><span class="icon" aria-hidden="true">${w.icon}</span><kbd>${index+1}</kbd><b>${w.name}</b><span class="school">${w.role}</span><small><strong>普攻 · ${w.moves.map(move=>move.damage).join(" / ")}</strong> ${w.basic}</small><small><strong>${w.skill} · ${w.cd} 秒</strong> ${weaponSkillDetail(w)}</small></button>`;
 }
 function openWeaponLoot(loot){
   state="weapon";resetInput();

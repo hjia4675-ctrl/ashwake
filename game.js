@@ -1908,7 +1908,7 @@ function drawHud(){
   $("weaponName").style.color=weapon?.color??"";
   $("spareName").textContent=spare?" / "+spare.name:"";
   $("weaponSwap").title=spare?"切换到"+spare.name+"（T）":"拾取第二把武器后可切换";
-  $("weaponSkill").title=weapon?`${weapon.skill}（R） · ${weapon.detail}`:"拾取武器后解锁专属技能";
+  $("weaponSkill").title=weapon?`${weapon.skill}（R） · ${weaponSkillDetail(weapon)}`:"拾取武器后解锁专属技能";
   $("weaponSkill").disabled=!weapon;$("weaponSwap").disabled=!spare;
   syncLinkCue(true);
   const countdown=seconds=>Math.max(.1,seconds).toFixed(1)+(touchUI?"":" 秒");
@@ -2191,7 +2191,7 @@ function pause(){
 function showPauseMenu(){
   const loadout=player.weapons.map((id,i)=>{
     const w=weaponBook[id];
-    return [`${i===player.weaponSlot?"当前 · ":"备用 · "}${w.name}`,`${w.basic}<br><b>R ${w.skill} · ${w.cd} 秒</b>${w.detail}`];
+    return [`${i===player.weaponSlot?"当前 · ":"备用 · "}${w.name}`,`${w.basic}<br><b>R ${w.skill} · ${w.cd} 秒</b>${weaponSkillDetail(w)}`];
   });
   if(player.leech)loadout.push([`温热血石 ×${player.leech}`,`击杀小怪回复 ${LEECH_KILL_HEAL*player.leech} 点，本层已用 ${player.leechUsed} / ${LEECH_LIMIT*player.leech} 点。每打掉首领 20% 最大生命，回复 ${LEECH_BOSS_HEAL*player.leech} 点。`]);
   if(player.dashStrike)loadout.push([`逆刃之轨 ×${player.dashStrike}`,`闪步穿过小怪造成 ${DASH_STRIKE.mobDamage*player.dashStrike} 点伤害，对首领造成 ${DASH_STRIKE.bossDamage*player.dashStrike} 点伤害。`]);
