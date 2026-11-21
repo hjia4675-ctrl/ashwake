@@ -23,6 +23,7 @@ const RELIC_STACK_LIMIT=5, RESTRICTED_RELIC_STACK_LIMIT=3;
 const LEECH_KILL_HEAL=2, LEECH_LIMIT=30, LEECH_BOSS_HEAL=10;
 const BASE_ASH={hit:.9,bossHit:.65,kill:1.75,perfectDodge:5.5};
 const FLOOR_BELL_DAMAGE=[90,113,137,160,183,207,230];
+const BELL_RELIC_REFUND={refund:15,sanctum:10};
 const EMBER_ORB={cooldown:3.25,reach:455,speed:660,radius:16,damage:46,spread:.24,repeat:[1,.55,.35,.24,.16],pierce:.70,outerPower:.60};
 const EMBER_SPLASH={impact:20,damage:17,targets:3,reach:72};
 const EMBER_SLOW=2;
@@ -99,10 +100,10 @@ const schools = {
   bell:{name:"丧钟", relics:[
     ["doom","☉","黑日之环","丧钟对普通和精英怪伤害提高 16%，对首领提高 32%。余烬获取提高 5%。",p=>{p.ultPower*=1.16;p.ultBossPower*=1.32;p.ashRate*=1.05}],
     ["echo","♫","回音铜舌","战斗中的余烬获取提高 20%。",p=>p.ashRate*=1.20],
-    ["refund","⟳","不熄钟芯","每次释放丧钟返还 20 点余烬，丧钟伤害提高 10%。",p=>{p.ultRefund+=20;p.ultPower*=1.10;p.ultBossPower*=1.10},RESTRICTED_RELIC_STACK_LIMIT],
+    ["refund","⟳","不熄钟芯",`每次释放丧钟返还 ${BELL_RELIC_REFUND.refund} 点余烬，丧钟伤害提高 10%。`,p=>{p.ultRefund+=BELL_RELIC_REFUND.refund;p.ultPower*=1.10;p.ultBossPower*=1.10},RESTRICTED_RELIC_STACK_LIMIT],
     ["requiem","✚","安魂钟绳","每次释放丧钟回复 15 点生命。",p=>p.ultHeal+=15,RESTRICTED_RELIC_STACK_LIMIT],
     ["dust","♢","拾灰王冠",`每份让非丧钟击杀小怪额外获得 ${DUST.kill} 点基础余烬，每层最多 ${DUST.limit} 点。每削去首领 20% 最大生命，额外获得 ${DUST.boss} 点基础余烬，最多触发四次。`,p=>p.dust++],
-    ["sanctum","◎","回声圣盾","丧钟范围提高 12%，施放后无敌延长 0.5 秒，并返还 10 点余烬。",p=>{p.ultReach*=1.12;p.ultInv+=.5;p.ultRefund+=10}]
+    ["sanctum","◎","回声圣盾",`丧钟范围提高 12%，施放后无敌延长 0.5 秒，并返还 ${BELL_RELIC_REFUND.sanctum} 点余烬。`,p=>{p.ultReach*=1.12;p.ultInv+=.5;p.ultRefund+=BELL_RELIC_REFUND.sanctum}]
   ]},
   ward:{name:"生存", relics:[
     ["mercy","✚","破碎圣徽","生命上限增加 25，立即回复 40 点生命。",p=>{p.maxHp+=25;p.hp+=40}],
@@ -289,6 +290,7 @@ function restoreExpedition(){
   }catch{clearRunStorage();return false}
   ({stage,route,kills,cleared,elapsed,scene,player,floor,chamber,descent,pulse,nextPulse,pulseIndex,acquired,previousRelicOffer,
     foes,shots,spawns,orbs,weaponBolts,weaponFields,hitStop}=run);
+  player.ultRefund=acquired.reduce((total,relic)=>total+(BELL_RELIC_REFUND[relic.id]??0),0);
   lastRunSave=elapsed;
   pincer=null;
   lastAction="";last=mobileTime=nextMobileDraw=hudTime=0;
