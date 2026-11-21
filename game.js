@@ -36,7 +36,7 @@ const BELL_RUSH=[
   {trigger:322,reach:300,speed:740,tell:.56,damage:33,recovery:.92},
   {trigger:396,reach:365,speed:900,tell:.43,damage:37,recovery:.78}
 ];
-const BELL_SIGIL=[{reach:450,radius:94,recovery:.64},{reach:540,radius:100,recovery:.54}];
+const BELL_SIGIL=[{reach:450,radius:94,recovery:.64},{reach:540,radius:100,recovery:.54,warning:.60}];
 const SENTINEL_SWEEP={reach:265,arc:.72,recovery:2.05};
 const ARCHER_FRAME=[1083,77,353,402];
 const arenas = ["arena", "arena-2", "arena-3", "arena-4", "arena-5", "arena-6", "arena-7"];
@@ -909,7 +909,11 @@ function beginTell(e,p,bossAttack){
     }
   }
   if(rush)prepareBossRush(e,p,rush);
-  if(e.pattern==="sigil")e.marks=prepareBellSigils(e,p);
+  if(e.pattern==="sigil"){
+    e.marks=prepareBellSigils(e,p);
+    // Keep the existing prediction lead and extend only the visible warning.
+    e.full=e.tell=BELL_SIGIL[e.phase-1].warning??e.full;
+  }
   if(e.anchored){
     const target=predictRunner(p,e.homeRoom??e,e.full,112);
     e.attackA=angle(e,target);
