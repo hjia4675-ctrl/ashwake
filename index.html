@@ -128,14 +128,14 @@
 .touch-ui .game-actions button{width:40px;min-height:40px;padding:0;border-radius:10px;background:#1e151feb}
 .touch-ui .game-actions button:active{border-color:#e8ab86;background:#47303a}
 .touch-ui .game-actions #weaponSwap{
-  position:absolute;top:calc(100% + 6px);right:-2px;width:44px;height:44px;
+  position:absolute;top:calc(100% + 6px);right:50%;transform:translateX(50%);width:52px;height:52px;
   display:grid;place-content:center;gap:2px;color:#ffe5d2;touch-action:none
 }
 .touch-ui #weaponSwap:disabled{visibility:hidden}
 .touch-ui .game-actions #weaponSwap.is-pressed{border-color:#e8ab86;background:#47303a}
 .touch-ui .game-actions #weaponSwap :is(kbd,.control-state,i){display:none}
-.touch-ui .game-actions #weaponSwap .control-icon{display:block;font:700 20px/1 system-ui;color:#e8bb9c}
-.touch-ui .game-actions #weaponSwap .control-name{display:block;font:700 10px/1 system-ui}
+.touch-ui .game-actions #weaponSwap .control-icon{display:block;font:700 22px/1 system-ui;color:#e8bb9c}
+.touch-ui .game-actions #weaponSwap .control-name{display:block;font:700 11px/1 system-ui}
 .touch-ui .boss-hud{top:calc(var(--hud-top) + 68px);width:min(58%,390px)}
 .touch-ui .banner{top:24%;letter-spacing:.07em}
 .touch-ui .game-bottom{z-index:3;height:calc(2 * var(--key) + 37px);min-height:0;bottom:var(--hud-bottom);left:auto;right:var(--hud-right);padding:0;background:none}
