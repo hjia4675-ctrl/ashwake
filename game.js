@@ -306,8 +306,10 @@ function syncTouchViewport(){
   if(rotated!==touchRotated){
     touchRotated=rotated;app.classList.toggle("touch-rotated",rotated);resetInput();
   }
-  app.style.setProperty("--screen-width",`${viewport?.width||innerWidth}px`);
-  app.style.setProperty("--screen-height",`${viewport?.height||innerHeight}px`);
+  const width=viewport?.width||innerWidth,height=viewport?.height||innerHeight;
+  app.classList.toggle("touch-short",(rotated?width:height)<320);
+  app.style.setProperty("--screen-width",`${width}px`);
+  app.style.setProperty("--screen-height",`${height}px`);
   app.style.setProperty("--screen-left",`${viewport?.offsetLeft??0}px`);
   app.style.setProperty("--screen-top",`${viewport?.offsetTop??0}px`);
 }
@@ -2247,6 +2249,8 @@ function syncTouchLayout(){
   app.classList.toggle("touch-ui",touchUI);
   app.classList.toggle("touch-left",save.touchLeft);
   app.classList.toggle("touch-large",save.touchLarge);
+  const swap=$("weaponSwap"), controls=$(touchUI?"gameActions":"combatAbilities");
+  if(swap.parentElement!==controls)controls.append(swap);
 }
 function resetInput(){
   keys.clear();actions.clear();touchCasts.clear();touchAim=null;weaponAim=null;

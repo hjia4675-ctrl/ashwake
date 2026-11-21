@@ -123,10 +123,19 @@
 .touch-ui .room{letter-spacing:.02em;min-width:0;line-height:1.3}
 .touch-ui .room #traverse{margin-top:6px;gap:6px}
 .touch-ui .room #chamberText{font-size:10px;margin-top:3px;letter-spacing:0}
-.touch-ui .game-actions:has(#mapButton){gap:4px;min-width:0;flex:none}
+.touch-ui .game-actions:has(#mapButton){position:relative;gap:4px;min-width:0;flex:none}
 .touch-ui .game-actions #killText,.touch-ui .combat-tip,.touch-ui .relic-row{display:none}
 .touch-ui .game-actions button{width:40px;min-height:40px;padding:0;border-radius:10px;background:#1e151feb}
 .touch-ui .game-actions button:active{border-color:#e8ab86;background:#47303a}
+.touch-ui .game-actions #weaponSwap{
+  position:absolute;top:calc(100% + 6px);right:-2px;width:44px;height:44px;
+  display:grid;place-content:center;gap:2px;color:#ffe5d2;touch-action:none
+}
+.touch-ui #weaponSwap:disabled{visibility:hidden}
+.touch-ui .game-actions #weaponSwap.is-pressed{border-color:#e8ab86;background:#47303a}
+.touch-ui .game-actions #weaponSwap :is(kbd,.control-state,i){display:none}
+.touch-ui .game-actions #weaponSwap .control-icon{display:block;font:700 20px/1 system-ui;color:#e8bb9c}
+.touch-ui .game-actions #weaponSwap .control-name{display:block;font:700 10px/1 system-ui}
 .touch-ui .boss-hud{top:calc(var(--hud-top) + 68px);width:min(58%,390px)}
 .touch-ui .banner{top:24%;letter-spacing:.07em}
 .touch-ui .game-bottom{z-index:3;height:calc(2 * var(--key) + 37px);min-height:0;bottom:var(--hud-bottom);left:auto;right:var(--hud-right);padding:0;background:none}
@@ -145,7 +154,7 @@
 .touch-ui .game .abilities button[data-act=skill]{--tint:#ff9b71;--edge:calc(var(--key) + 27px);--rise:calc(var(--key) + 13px);--size:calc(var(--key) + 5px)}
 .touch-ui .game .abilities button[data-act=ult]{--tint:#e9b4ff;--edge:6px;--rise:calc(var(--key) + 34px)}
 .touch-ui .game .abilities button[data-act=weapon]{--tint:#aed9ff;--edge:calc(2 * var(--key) + 43px);--rise:calc(var(--key) + 9px)}
-.touch-ui .game .abilities button[data-act=switch]{--tint:#d4b8a6;--edge:calc(2 * var(--key) + 43px);--rise:2px;--size:max(44px,calc(var(--key) - 4px))}
+.touch-ui.touch-short:not(.touch-left) .game .abilities button[data-act=ult]{--edge:calc(2 * var(--key) + 43px);--rise:2px}
 .touch-ui .game .abilities button:disabled{visibility:hidden}
 .touch-ui .game .abilities button.is-pressed,.touch-ui .game .abilities button:active{transform:scale(.93);box-shadow:0 0 14px var(--tint),inset 0 0 12px #e2b29e5e}
 .touch-ui .game .abilities button.link,.touch-ui .game .abilities button.ready[data-act=ult]{border-color:var(--tint);box-shadow:0 0 19px #edac8fac,inset 0 0 13px #f1aa6d42}
@@ -310,14 +319,14 @@
       <div class="game-top">
         <div class="vitals"><div class="vital-label"><span id="heroName">守钟人</span><span id="hpText"></span></div><div class="bar hp"><i id="hpFill"></i></div><div class="bar ash"><i id="ashFill"></i></div><div class="loadout"><b id="weaponName">余烬刃</b><span id="spareName"></span></div></div>
         <div class="room"><div id="roomText"></div><div id="chamberText"></div><div id="traverse" aria-label="试炼进度"></div><div id="routeText"></div></div>
-        <div class="game-actions"><div id="killText"></div><button id="mapButton" class="quiet" aria-label="查看地宫地图" title="地宫地图（M）">图</button><button id="relicButton" class="quiet" aria-haspopup="dialog" aria-keyshortcuts="I" title="查看本局遗物（I）">遗物</button><button id="pause" class="quiet" aria-label="暂停">Ⅱ</button></div>
+        <div class="game-actions" id="gameActions"><div id="killText"></div><button id="mapButton" class="quiet" aria-label="查看地宫地图" title="地宫地图（M）">图</button><button id="relicButton" class="quiet" aria-haspopup="dialog" aria-keyshortcuts="I" title="查看本局遗物（I）">遗物</button><button id="pause" class="quiet" aria-label="暂停">Ⅱ</button></div>
       </div>
       <div id="bossHud" class="boss-hud" hidden><b id="bossName"></b><div class="bar"><i id="bossFill"></i></div></div>
       <div id="banner" class="banner" aria-live="polite"></div>
       <button id="interact" class="quiet" hidden><kbd>F</kbd><span id="interactLabel"></span><small id="interactDetail"></small></button>
       <div class="game-bottom">
         <div class="relic-row" id="relicRow"></div>
-        <div class="abilities">
+        <div class="abilities" id="combatAbilities">
           <button data-act="attack" aria-label="普攻" aria-keyshortcuts="J"><kbd>J</kbd><span class="control-icon" aria-hidden="true">⚔︎</span><span class="control-name">普攻</span><span class="control-state" id="swordState">横扫</span><i></i></button>
           <button data-act="dash" aria-label="闪步" aria-keyshortcuts="Space"><kbd>空格</kbd><span class="control-icon" aria-hidden="true">➤</span><span class="control-name">闪步</span><span class="control-state" id="dashState">闪步</span><i></i></button>
           <button data-act="skill" aria-label="焚印" aria-keyshortcuts="E"><kbd>E</kbd><span class="control-icon" aria-hidden="true">✦</span><span class="control-name">焚印</span><span class="control-state" id="orbState">焚印</span><i></i></button>
@@ -1780,8 +1789,10 @@ function syncTouchViewport(){
   if(rotated!==touchRotated){
     touchRotated=rotated;app.classList.toggle("touch-rotated",rotated);resetInput();
   }
-  app.style.setProperty("--screen-width",`${viewport?.width||innerWidth}px`);
-  app.style.setProperty("--screen-height",`${viewport?.height||innerHeight}px`);
+  const width=viewport?.width||innerWidth,height=viewport?.height||innerHeight;
+  app.classList.toggle("touch-short",(rotated?width:height)<320);
+  app.style.setProperty("--screen-width",`${width}px`);
+  app.style.setProperty("--screen-height",`${height}px`);
   app.style.setProperty("--screen-left",`${viewport?.offsetLeft??0}px`);
   app.style.setProperty("--screen-top",`${viewport?.offsetTop??0}px`);
 }
@@ -3721,6 +3732,8 @@ function syncTouchLayout(){
   app.classList.toggle("touch-ui",touchUI);
   app.classList.toggle("touch-left",save.touchLeft);
   app.classList.toggle("touch-large",save.touchLarge);
+  const swap=$("weaponSwap"), controls=$(touchUI?"gameActions":"combatAbilities");
+  if(swap.parentElement!==controls)controls.append(swap);
 }
 function resetInput(){
   keys.clear();actions.clear();touchCasts.clear();touchAim=null;weaponAim=null;
