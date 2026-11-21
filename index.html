@@ -108,7 +108,9 @@
   --hud-bottom:calc(13px + var(--safe-bottom));
   --preferred-key:clamp(62px,15.5vmin,81px);
   --key:min(var(--preferred-key),max(50px,calc((var(--view-height) - var(--hud-top) - var(--hud-bottom) - 78px) / 2)));
-  --action-width:calc(3 * var(--key) + 43px);
+  --ember-edge:calc(var(--key) + 27px);
+  --weapon-edge:max(calc(2 * var(--key) + 43px),calc(var(--ember-edge) + var(--key) + 11px));
+  --action-width:calc(var(--weapon-edge) + var(--key));
   --interact-width:min(160px,29%);
   --stick-size:clamp(116px,29.5vmin,154px);
   --stick-rest:max(50px,calc(var(--stick-size) / 2 + 4px));
@@ -116,6 +118,7 @@
 }
 .touch-ui #field{touch-action:none}
 .touch-ui.touch-large .game{--preferred-key:clamp(68px,17vmin,90px);--stick-size:clamp(128px,32.5vmin,164px)}
+.touch-ui.touch-short:not(.touch-left) .game{--ember-edge:max(calc(var(--key) + 27px),96px)}
 .touch-ui .game-top{z-index:4;min-height:0;gap:6px;padding:var(--hud-top) var(--hud-right) 14px var(--hud-left)}
 .touch-ui .vitals{width:clamp(84px,24%,175px);flex:none;min-width:0}
 .touch-ui .vital-label{font-size:11px;margin-bottom:5px;gap:3px;letter-spacing:0}
@@ -151,9 +154,9 @@
 }
 .touch-ui .game .abilities button[data-act=attack]{--tint:#ffbf87;--size:calc(var(--key) + 23px);border-color:#db9c77;background:radial-gradient(circle at 45% 27%,#773f36ed,#341c2cf5 73%)}
 .touch-ui .game .abilities button[data-act=dash]{--tint:#8ee1d2;--edge:calc(var(--key) + 31px);--size:calc(var(--key) + 5px)}
-.touch-ui .game .abilities button[data-act=skill]{--tint:#ff9b71;--edge:calc(var(--key) + 27px);--rise:calc(var(--key) + 13px);--size:calc(var(--key) + 5px)}
+.touch-ui .game .abilities button[data-act=skill]{--tint:#ff9b71;--edge:var(--ember-edge);--rise:calc(var(--key) + 13px);--size:calc(var(--key) + 5px)}
 .touch-ui .game .abilities button[data-act=ult]{--tint:#e9b4ff;--edge:6px;--rise:calc(var(--key) + 34px)}
-.touch-ui .game .abilities button[data-act=weapon]{--tint:#aed9ff;--edge:calc(2 * var(--key) + 43px);--rise:calc(var(--key) + 9px)}
+.touch-ui .game .abilities button[data-act=weapon]{--tint:#aed9ff;--edge:var(--weapon-edge);--rise:calc(var(--key) + 9px)}
 .touch-ui.touch-short:not(.touch-left) .game .abilities button[data-act=ult]{--edge:calc(2 * var(--key) + 43px);--rise:2px}
 .touch-ui .game .abilities button:disabled{visibility:hidden}
 .touch-ui .game .abilities button.is-pressed,.touch-ui .game .abilities button:active{transform:scale(.93);box-shadow:0 0 14px var(--tint),inset 0 0 12px #e2b29e5e}
